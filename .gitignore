@@ -33,6 +33,14 @@ yarn-error.*
 # local env files
 .env*.local
 
+# build artifacts
+*.ipa
+*.aab
+*.apk
+
+# Google Play service account key
+google-play-service-account.json
+
 # typescript
 *.tsbuildinfo
 
