@@ -85,6 +85,8 @@ export function subscribeToTeam(teamId: string, callback: (team: Team | null) =>
       return;
     }
     callback({ id: snapshot.id, ...snapshot.data() } as Team);
+  }, (error) => {
+    console.error('[Firestore] subscribeToTeam error:', error.code, error.message);
   });
 }
 
@@ -147,6 +149,8 @@ export function subscribeToMatches(
       ...doc.data(),
     })) as Match[];
     callback(matches);
+  }, (error) => {
+    console.error('[Firestore] subscribeToMatches error:', error.code, error.message);
   });
 }
 
@@ -207,6 +211,8 @@ export function subscribeToVenues(
       ...d.data(),
     })) as Venue[];
     callback(venues);
+  }, (error) => {
+    console.error('[Firestore] subscribeToVenues error:', error.code, error.message);
   });
 }
 
@@ -253,5 +259,7 @@ export function subscribeToPlayers(
       ...d.data(),
     })) as Player[];
     callback(players);
+  }, (error) => {
+    console.error('[Firestore] subscribeToPlayers error:', error.code, error.message);
   });
 }

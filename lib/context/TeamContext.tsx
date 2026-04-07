@@ -76,13 +76,15 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Subscribe to team
+  // Subscribe to team（user が確定してから購読開始）
   useEffect(() => {
-    if (!teamId) {
-      setTeam(null);
-      setMatches([]);
-      setVenues([]);
-      setPlayers([]);
+    if (!teamId || !user) {
+      if (!teamId) {
+        setTeam(null);
+        setMatches([]);
+        setVenues([]);
+        setPlayers([]);
+      }
       return;
     }
 
@@ -97,7 +99,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       unsubVenues();
       unsubPlayers();
     };
-  }, [teamId]);
+  }, [teamId, user]);
 
   // スコア有無で振り分け（statusフィールドに依存しない）
   const upcomingMatches = useMemo(() => {
