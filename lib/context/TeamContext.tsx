@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../firebase';
 import { Team, Match, Venue, Player, Plan } from '../types';
@@ -75,6 +75,23 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   // Auth状態監視（メール認証 or カスタムトークン）
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        // 旧バージョンからのアップデートユーザー向け：
+        // teamIdがあるのにAuthがない場合は匿名ログインしてメール登録モーダルを出す
+        const savedTeamId = await AsyncStorage.getItem(TEAM_ID_KEY);
+        if (savedTeamId) {
+          try {
+            await signInAnonymously(auth);
+            // onAuthStateChangedが再度発火するのでここではreturn
+            return;
+          } catch (e) {
+            console.warn('[Auth] signInAnonymously failed:', e);
+          }
+        }
+        setUser(null);
+        setAuthLoading(false);
+        return;
+      }
       setUser(firebaseUser);
       setAuthLoading(false);
       if (firebaseUser) {
