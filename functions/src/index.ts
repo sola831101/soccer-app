@@ -198,22 +198,28 @@ export const linkEmailToUser = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('unauthenticated', 'コードが正しくありません');
   }
 
-  await db.collection('otps').doc(email).delete();
-
   const emailUserRef = db.collection('emailUsers').doc(email);
   const emailUserDoc = await emailUserRef.get();
 
   if (emailUserDoc.exists) {
     const existingUid = emailUserDoc.data()!.uid;
-    // 別のアカウントが同じメールを登録しようとしている場合はエラー
+    // 既存アカウントが存在する場合：OTPを残したまま競合を通知
+    // クライアント側でverifyOTPによるサインインにフォールバックさせる
     if (existingUid !== currentUid) {
       throw new functions.https.HttpsError(
         'already-exists',
         'このメールアドレスは既に別のアカウントに登録されています'
       );
     }
-    return { uid: existingUid };
+    // 同じUID：OTPを削除し、tempPasswordを発行して非匿名セッションへ移行させる
+    await db.collection('otps').doc(email).delete();
+    const { randomBytes: rb1 } = await import('crypto');
+    const tempPassword1 = rb1(32).toString('hex');
+    await admin.auth().updateUser(existingUid, { password: tempPassword1 });
+    return { uid: existingUid, tempPassword: tempPassword1 };
   }
+
+  await db.collection('otps').doc(email).delete();
 
   const teamsSnapshot = await db.collection('teams')
     .where('memberIds', 'array-contains', currentUid)
@@ -251,5 +257,9 @@ export const linkEmailToUser = functions.https.onCall(async (data, context) => {
     }
   }
 
-  return { uid: currentUid };
+  // tempPasswordを発行してクライアントが非匿名セッションへ移行できるようにする
+  const { randomBytes: rb2 } = await import('crypto');
+  const tempPassword2 = rb2(32).toString('hex');
+  await admin.auth().updateUser(currentUid, { password: tempPassword2 });
+  return { uid: currentUid, tempPassword: tempPassword2 };
 });

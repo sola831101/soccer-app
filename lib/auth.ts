@@ -48,8 +48,10 @@ export async function verifyOTPAndSignIn(email: string, code: string): Promise<s
 }
 
 export async function linkEmailToCurrentUser(email: string, code: string): Promise<void> {
-  const fn = httpsCallable(fns, 'linkEmailToUser');
-  await fn({ email, code });
+  const fn = httpsCallable<any, { uid: string; tempPassword: string }>(fns, 'linkEmailToUser');
+  const result = await fn({ email, code });
+  // 匿名セッションから非匿名セッションへ移行（再起動後もモーダルが出ないようにする）
+  await signInWithEmailAndPassword(auth, email, result.data.tempPassword);
 }
 
 // ============================

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
-import { sendOTP, linkEmailToCurrentUser } from '../lib/auth';
+import { sendOTP, linkEmailToCurrentUser, verifyOTPAndSignIn } from '../lib/auth';
 
 interface EmailLinkModalProps {
   visible: boolean;
@@ -63,7 +63,16 @@ export function EmailLinkModal({ visible, onClose, onSuccess, forced = false }: 
     }
     setLoading(true);
     try {
-      await linkEmailToCurrentUser(email.trim().toLowerCase(), otpCode.trim());
+      try {
+        await linkEmailToCurrentUser(email.trim().toLowerCase(), otpCode.trim());
+      } catch (e: any) {
+        // 既存アカウントが存在する場合はそのアカウントでサインインし直す
+        if (e?.code === 'already-exists') {
+          await verifyOTPAndSignIn(email.trim().toLowerCase(), otpCode.trim());
+        } else {
+          throw e;
+        }
+      }
       onSuccess?.();
       Alert.alert('登録完了', 'メールアドレスが登録されました。次回以降このメールでデータを引き継げます。', [
         { text: 'OK', onPress: handleClose },
