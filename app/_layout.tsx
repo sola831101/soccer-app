@@ -3,8 +3,15 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import * as Sentry from '@sentry/react-native';
 import { TeamProvider } from '../lib/context/TeamContext';
 import { theme } from '../constants/theme';
+
+Sentry.init({
+  dsn: Constants.expoConfig?.extra?.sentryDsn ?? '',
+  enabled: !__DEV__,
+  tracesSampleRate: 0.2,
+});
 
 const isExpoGo = Constants.appOwnership === 'expo';
 

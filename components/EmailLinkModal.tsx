@@ -20,9 +20,10 @@ interface EmailLinkModalProps {
   onClose: () => void;
   onSuccess?: () => void;
   forced?: boolean;
+  teamId?: string;
 }
 
-export function EmailLinkModal({ visible, onClose, onSuccess, forced = false }: EmailLinkModalProps) {
+export function EmailLinkModal({ visible, onClose, onSuccess, forced = false, teamId }: EmailLinkModalProps) {
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
@@ -64,7 +65,7 @@ export function EmailLinkModal({ visible, onClose, onSuccess, forced = false }: 
     setLoading(true);
     try {
       try {
-        await linkEmailToCurrentUser(email.trim().toLowerCase(), otpCode.trim());
+        await linkEmailToCurrentUser(email.trim().toLowerCase(), otpCode.trim(), teamId);
       } catch (e: any) {
         // 既存アカウントが存在する場合はそのアカウントでサインインし直す
         // Firebase Callable の HttpsError コードは 'functions/already-exists' 形式

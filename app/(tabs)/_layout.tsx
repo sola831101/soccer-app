@@ -54,6 +54,7 @@ export default function TabLayout() {
         onClose={() => {}}
         onSuccess={() => setEmailLinkedLocally(true)}
         forced
+        teamId={teamId ?? undefined}
       />
     <Tabs
       screenOptions={{

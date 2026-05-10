@@ -163,12 +163,13 @@ exports.verifyOTP = functions.https.onRequest(async (req, res) => {
 });
 // 既存ユーザーのメール登録（Callable - 認証済みユーザーのみ）
 exports.linkEmailToUser = functions.https.onCall(async (data, context) => {
-    var _a, _b;
+    var _a, _b, _c, _d, _e;
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', '認証が必要です');
     }
     const email = normalizeEmail((_a = data.email) !== null && _a !== void 0 ? _a : '');
     const code = ((_b = data.code) !== null && _b !== void 0 ? _b : '').trim();
+    const teamId = ((_c = data.teamId) !== null && _c !== void 0 ? _c : '').trim();
     const currentUid = context.auth.uid;
     if (!email || !code) {
         throw new functions.https.HttpsError('invalid-argument', 'メールアドレスとコードが必要です');
@@ -239,6 +240,34 @@ exports.linkEmailToUser = functions.https.onCall(async (data, context) => {
             catch (updateErr) {
                 console.error('[linkEmailToUser] updateUser also failed:', updateErr === null || updateErr === void 0 ? void 0 : updateErr.code, updateErr === null || updateErr === void 0 ? void 0 : updateErr.message);
             }
+        }
+    }
+    // 匿名UIDがmemberIdsに含まれていない場合、teamIdを使ってチームに追加する
+    if (teamId && teamRoles.length === 0) {
+        try {
+            const teamDoc = await db.collection('teams').doc(teamId).get();
+            if (teamDoc.exists) {
+                const teamData = teamDoc.data();
+                const memberIds = (_d = teamData.memberIds) !== null && _d !== void 0 ? _d : [];
+                if (!memberIds.includes(currentUid)) {
+                    // プランに応じたメンバー上限チェック
+                    const plan = (_e = teamData.plan) !== null && _e !== void 0 ? _e : 'free';
+                    const memberLimit = plan === 'family' ? 10 : 5;
+                    if (memberIds.length < memberLimit) {
+                        await db.collection('teams').doc(teamId).update({
+                            memberIds: admin.firestore.FieldValue.arrayUnion(currentUid),
+                        });
+                        console.log(`[linkEmailToUser] added uid ${currentUid} to team ${teamId}`);
+                    }
+                    else {
+                        console.warn(`[linkEmailToUser] team ${teamId} is full (${memberIds.length}/${memberLimit})`);
+                    }
+                }
+            }
+        }
+        catch (e) {
+            // チーム追加に失敗してもメール登録自体は成功させる
+            console.error('[linkEmailToUser] failed to add uid to team:', e);
         }
     }
     // tempPasswordを発行してクライアントが非匿名セッションへ移行できるようにする

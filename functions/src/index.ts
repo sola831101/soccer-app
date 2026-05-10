@@ -171,6 +171,7 @@ export const linkEmailToUser = functions.https.onCall(async (data, context) => {
 
   const email = normalizeEmail(data.email ?? '');
   const code = (data.code ?? '').trim();
+  const teamId = (data.teamId ?? '').trim();
   const currentUid = context.auth.uid;
 
   if (!email || !code) {
@@ -254,6 +255,33 @@ export const linkEmailToUser = functions.https.onCall(async (data, context) => {
       } catch (updateErr: any) {
         console.error('[linkEmailToUser] updateUser also failed:', updateErr?.code, updateErr?.message);
       }
+    }
+  }
+
+  // 匿名UIDがmemberIdsに含まれていない場合、teamIdを使ってチームに追加する
+  if (teamId && teamRoles.length === 0) {
+    try {
+      const teamDoc = await db.collection('teams').doc(teamId).get();
+      if (teamDoc.exists) {
+        const teamData = teamDoc.data()!;
+        const memberIds: string[] = teamData.memberIds ?? [];
+        if (!memberIds.includes(currentUid)) {
+          // プランに応じたメンバー上限チェック
+          const plan = teamData.plan ?? 'free';
+          const memberLimit = plan === 'family' ? 10 : 5;
+          if (memberIds.length < memberLimit) {
+            await db.collection('teams').doc(teamId).update({
+              memberIds: admin.firestore.FieldValue.arrayUnion(currentUid),
+            });
+            console.log(`[linkEmailToUser] added uid ${currentUid} to team ${teamId}`);
+          } else {
+            console.warn(`[linkEmailToUser] team ${teamId} is full (${memberIds.length}/${memberLimit})`);
+          }
+        }
+      }
+    } catch (e) {
+      // チーム追加に失敗してもメール登録自体は成功させる
+      console.error('[linkEmailToUser] failed to add uid to team:', e);
     }
   }
 

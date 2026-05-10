@@ -37,6 +37,7 @@ module.exports = {
     },
     plugins: [
       'expo-router',
+      '@sentry/react-native/expo',
       '@react-native-community/datetimepicker',
       [
         'react-native-google-mobile-ads',
@@ -52,6 +53,7 @@ module.exports = {
         projectId: '16c31cd1-bc17-428b-8715-49f89023a680',
       },
       rcApiKeyIos: process.env.RC_API_KEY_IOS ?? '',
+      sentryDsn: process.env.SENTRY_DSN ?? '',
     },
     owner: 'sola1101',
   },
