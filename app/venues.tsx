@@ -16,9 +16,11 @@ import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
 import { useTeam } from '../lib/context/TeamContext';
 import { createVenue, deleteVenue, updateVenue } from '../lib/firestore';
 import { Venue } from '../lib/types';
+import { UpgradeModal } from '../components/UpgradeModal';
+import { PLAN_LIMITS } from '../lib/plans';
 
 export default function VenuesScreen() {
-  const { venues, teamId } = useTeam();
+  const { venues, teamId, plan } = useTeam();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -27,6 +29,10 @@ export default function VenuesScreen() {
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
   const [editName, setEditName] = useState('');
   const [editGoogleMapsUrl, setEditGoogleMapsUrl] = useState('');
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const venueLimit = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS]?.venues ?? PLAN_LIMITS.free.venues;
+  const atLimit = venues.length >= venueLimit;
 
   const handleOpenGoogleMaps = () => {
     Linking.openURL('https://maps.google.com');
@@ -57,6 +63,12 @@ export default function VenuesScreen() {
       return;
     }
     if (!teamId) return;
+
+    if (atLimit) {
+      setShowForm(false);
+      setShowUpgrade(true);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -156,11 +168,18 @@ export default function VenuesScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgrade={() => setShowUpgrade(false)}
+        reason={`無料プランは会場を${PLAN_LIMITS.free.venues}件まで登録できます。プレミアムにアップグレードすると無制限に登録できます。`}
+      />
       <FlatList
         data={venues}
         keyExtractor={(item) => item.id}
         renderItem={renderVenue}
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="location-outline" size={64} color={theme.border} />
@@ -225,13 +244,32 @@ export default function VenuesScreen() {
               </View>
             </View>
           ) : (
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => setShowForm(true)}
-            >
-              <Ionicons name="add-circle-outline" size={22} color={theme.primary} />
-              <Text style={styles.addButtonText}>会場を追加</Text>
-            </TouchableOpacity>
+            <View>
+              {venueLimit !== Infinity && (
+                <Text style={styles.limitText}>
+                  {venues.length} / {venueLimit}件
+                </Text>
+              )}
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => {
+                  if (atLimit) {
+                    setShowUpgrade(true);
+                  } else {
+                    setShowForm(true);
+                  }
+                }}
+              >
+                <Ionicons
+                  name={atLimit ? 'lock-closed-outline' : 'add-circle-outline'}
+                  size={22}
+                  color={atLimit ? theme.textSecondary : theme.primary}
+                />
+                <Text style={[styles.addButtonText, atLimit && { color: theme.textSecondary }]}>
+                  {atLimit ? `上限（${PLAN_LIMITS.free.venues}件）に達しました` : '会場を追加'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )
         }
       />
@@ -312,6 +350,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  limitText: {
+    textAlign: 'center',
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    marginTop: spacing.md,
   },
   addButton: {
     flexDirection: 'row',

@@ -14,16 +14,63 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
 import { useTeam } from '../lib/context/TeamContext';
-import { createTeam, joinTeam } from '../lib/firestore';
+import { createTeam, joinTeam, getUserTeams } from '../lib/firestore';
+import { sendOTP, verifyOTPAndSignIn } from '../lib/auth';
 
-type Mode = 'select' | 'create' | 'join';
+type Step = 'email' | 'otp' | 'select' | 'create' | 'join';
 
 export default function OnboardingScreen() {
   const { user, setTeamId } = useTeam();
-  const [mode, setMode] = useState<Mode>('select');
+  const [step, setStep] = useState<Step>('email');
+  const [email, setEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [teamName, setTeamName] = useState('');
   const [shareCode, setShareCode] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleSendOTP = async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      Alert.alert('入力エラー', '正しいメールアドレスを入力してください');
+      return;
+    }
+    setLoading(true);
+    try {
+      await sendOTP(trimmed);
+      setStep('otp');
+    } catch (e: unknown) {
+      const err = e as any;
+      const msg = err?.message ?? 'メール送信に失敗しました。もう一度お試しください';
+      Alert.alert('エラー', msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (otpCode.length !== 6) {
+      Alert.alert('入力エラー', '6桁のコードを入力してください');
+      return;
+    }
+    setLoading(true);
+    try {
+      const uid = await verifyOTPAndSignIn(email.trim().toLowerCase(), otpCode.trim());
+      // 既存チームがあればホームへ、なければチーム作成/参加画面へ
+      const teams = await getUserTeams(uid);
+      if (teams.length > 0) {
+        await setTeamId(teams[0].id);
+        router.replace('/(tabs)');
+      } else {
+        setStep('select');
+      }
+    } catch (e: unknown) {
+      const fe = e as any;
+      const msg = fe?.message ?? 'コードの確認に失敗しました。もう一度お試しください';
+      Alert.alert('認証エラー', msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreate = async () => {
     if (!teamName.trim()) {
@@ -34,7 +81,6 @@ export default function OnboardingScreen() {
       Alert.alert('エラー', '認証中です。しばらくお待ちください');
       return;
     }
-
     setLoading(true);
     try {
       const team = await createTeam(teamName.trim(), user.uid);
@@ -44,7 +90,7 @@ export default function OnboardingScreen() {
         `共有コード: ${team.shareCode}\n\n家族にこのコードを共有してください`,
         [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
       );
-    } catch (e) {
+    } catch {
       Alert.alert('エラー', 'チームの作成に失敗しました');
     } finally {
       setLoading(false);
@@ -60,7 +106,6 @@ export default function OnboardingScreen() {
       Alert.alert('エラー', '認証中です。しばらくお待ちください');
       return;
     }
-
     setLoading(true);
     try {
       const team = await joinTeam(shareCode.trim(), user.uid);
@@ -72,14 +117,110 @@ export default function OnboardingScreen() {
       Alert.alert('参加完了', `${team.name} に参加しました`, [
         { text: 'OK', onPress: () => router.replace('/(tabs)') },
       ]);
-    } catch (e) {
-      Alert.alert('エラー', 'チームへの参加に失敗しました');
+    } catch (e: any) {
+      if (e?.code === 'MEMBER_LIMIT_EXCEEDED') {
+        Alert.alert('参加できません', e.message);
+      } else {
+        Alert.alert('エラー', 'チームへの参加に失敗しました');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  if (mode === 'select') {
+  // メール入力画面
+  if (step === 'email') {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.hero}>
+          <Ionicons name="football-outline" size={80} color={theme.primary} />
+          <Text style={styles.title}>サカログ</Text>
+          <Text style={styles.subtitle}>試合の予定・結果を{'\n'}家族で共有しよう</Text>
+        </View>
+        <View style={styles.formContainer}>
+          <Text style={styles.formTitle}>メールアドレスを入力</Text>
+          <Text style={styles.formSubtitle}>
+            データの引き継ぎや機種変更に使います。認証コードをお送りします。
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="example@email.com"
+            placeholderTextColor={theme.textSecondary}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus
+          />
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            onPress={handleSendOTP}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={theme.white} />
+            ) : (
+              <Text style={styles.primaryButtonText}>認証コードを送信</Text>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.legalNote}>
+            続行することで、プライバシーポリシーおよび利用規約に同意したものとみなされます。
+          </Text>
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // OTP入力画面
+  if (step === 'otp') {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <TouchableOpacity style={styles.backButton} onPress={() => setStep('email')}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
+        </TouchableOpacity>
+        <View style={styles.formContainer}>
+          <Text style={styles.formTitle}>認証コードを入力</Text>
+          <Text style={styles.formSubtitle}>
+            {email} に6桁のコードを送信しました。
+          </Text>
+          <TextInput
+            style={[styles.input, styles.codeInput]}
+            value={otpCode}
+            onChangeText={(t) => setOtpCode(t.replace(/[^0-9]/g, ''))}
+            placeholder="000000"
+            placeholderTextColor={theme.textSecondary}
+            keyboardType="number-pad"
+            maxLength={6}
+            autoFocus
+          />
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            onPress={handleVerifyOTP}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={theme.white} />
+            ) : (
+              <Text style={styles.primaryButtonText}>確認</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.resendButton} onPress={handleSendOTP} disabled={loading}>
+            <Text style={styles.resendText}>コードを再送する</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // チーム選択画面
+  if (step === 'select') {
     return (
       <View style={styles.container}>
         <View style={styles.hero}>
@@ -87,14 +228,12 @@ export default function OnboardingScreen() {
           <Text style={styles.title}>サカログ</Text>
           <Text style={styles.subtitle}>試合の予定・結果を{'\n'}家族で共有しよう</Text>
         </View>
-
         <View style={styles.buttons}>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => setMode('create')}>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => setStep('create')}>
             <Ionicons name="add-circle-outline" size={24} color={theme.white} />
-            <Text style={styles.primaryButtonText}>チームを作成</Text>
+            <Text style={styles.primaryButtonText}>グループを作成</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => setMode('join')}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => setStep('join')}>
             <Ionicons name="people-outline" size={24} color={theme.primary} />
             <Text style={styles.secondaryButtonText}>コードで参加</Text>
           </TouchableOpacity>
@@ -103,31 +242,30 @@ export default function OnboardingScreen() {
     );
   }
 
+  // チーム作成・参加画面
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <TouchableOpacity style={styles.backButton} onPress={() => setMode('select')}>
+      <TouchableOpacity style={styles.backButton} onPress={() => setStep('select')}>
         <Ionicons name="arrow-back" size={24} color={theme.text} />
       </TouchableOpacity>
-
       <View style={styles.formContainer}>
         <Text style={styles.formTitle}>
-          {mode === 'create' ? 'チームを作成' : 'チームに参加'}
+          {step === 'create' ? 'グループを作成' : 'グループに参加'}
         </Text>
         <Text style={styles.formSubtitle}>
-          {mode === 'create'
-            ? 'お子さんのチーム名を入力してください'
+          {step === 'create'
+            ? 'グループ名を入力してください（例: 田中家・〇〇ファミリー）'
             : '共有されたコードを入力してください'}
         </Text>
-
-        {mode === 'create' ? (
+        {step === 'create' ? (
           <TextInput
             style={styles.input}
             value={teamName}
             onChangeText={setTeamName}
-            placeholder="例: 〇〇FC U-10"
+            placeholder="例: 田中家、〇〇ファミリー"
             placeholderTextColor={theme.textSecondary}
             autoFocus
           />
@@ -143,17 +281,16 @@ export default function OnboardingScreen() {
             autoFocus
           />
         )}
-
         <TouchableOpacity
           style={[styles.primaryButton, loading && styles.buttonDisabled]}
-          onPress={mode === 'create' ? handleCreate : handleJoin}
+          onPress={step === 'create' ? handleCreate : handleJoin}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color={theme.white} />
           ) : (
             <Text style={styles.primaryButtonText}>
-              {mode === 'create' ? '作成する' : '参加する'}
+              {step === 'create' ? 'グループを作成する' : 'グループに参加する'}
             </Text>
           )}
         </TouchableOpacity>
@@ -221,9 +358,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '700',
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
+  buttonDisabled: { opacity: 0.6 },
   backButton: {
     position: 'absolute',
     top: 60,
@@ -231,9 +366,7 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     zIndex: 1,
   },
-  formContainer: {
-    paddingHorizontal: spacing.lg,
-  },
+  formContainer: { paddingHorizontal: spacing.lg },
   formTitle: {
     fontSize: fontSize.xl,
     fontWeight: '700',
@@ -244,6 +377,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: theme.textSecondary,
     marginBottom: spacing.lg,
+    lineHeight: 20,
   },
   input: {
     borderWidth: 1,
@@ -260,5 +394,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 8,
     fontWeight: '700',
+  },
+  resendButton: { alignItems: 'center', marginTop: spacing.md },
+  resendText: {
+    fontSize: fontSize.sm,
+    color: theme.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  legalNote: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+    lineHeight: 18,
   },
 });

@@ -18,6 +18,7 @@ import { MatchTypeBadge } from '../../components/MatchTypeBadge';
 import { ScoreDisplay } from '../../components/ScoreDisplay';
 import { YouTubePlayer } from '../../components/YouTubePlayer';
 import { MatchForm } from '../../components/MatchForm';
+import { AdBanner } from '../../components/AdBanner';
 
 function formatFullDate(date: Date): string {
   const days = ['日', '月', '火', '水', '木', '金', '土'];
@@ -32,7 +33,7 @@ function formatFullDate(date: Date): string {
 
 export default function MatchDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { matches, teamId } = useTeam();
+  const { matches, teamId, players } = useTeam();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -95,6 +96,7 @@ export default function MatchDetailScreen() {
             notes: match.notes,
             youtubeUrl: match.youtubeUrl,
             status: match.status,
+            playerIds: match.playerIds ?? [],
           }}
           onSubmit={handleUpdate}
           onDelete={handleDelete}
@@ -160,11 +162,39 @@ export default function MatchDetailScreen() {
           )}
         </View>
 
-        {/* YouTube */}
-        {match.youtubeUrl && (
+        {/* YouTube / 動画広告エリア */}
+        {match.youtubeUrl ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>動画</Text>
             <YouTubePlayer url={match.youtubeUrl} />
+          </View>
+        ) : (
+          <AdBanner rectangle />
+        )}
+
+        {/* 出場選手 */}
+        {(match.playerIds ?? []).length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>出場選手</Text>
+            <View style={styles.playersList}>
+              {(match.playerIds ?? []).map((pid) => {
+                const p = players.find((pl) => pl.id === pid);
+                if (!p) return null;
+                return (
+                  <TouchableOpacity
+                    key={pid}
+                    style={styles.playerRow}
+                    onPress={() => router.push(`/player/${pid}`)}
+                  >
+                    <Ionicons name="person-circle-outline" size={20} color={theme.primary} />
+                    <Text style={styles.playerName}>
+                      {p.number != null ? `#${p.number}  ` : ''}{p.name}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -175,6 +205,8 @@ export default function MatchDetailScreen() {
             <Text style={styles.notes}>{match.notes}</Text>
           </View>
         )}
+
+        <AdBanner />
 
         {/* ホームに戻る */}
         <TouchableOpacity
@@ -285,5 +317,27 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
     color: theme.primary,
+  },
+  playersList: {
+    backgroundColor: theme.white,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.border,
+    overflow: 'hidden',
+  },
+  playerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  playerName: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: theme.text,
   },
 });

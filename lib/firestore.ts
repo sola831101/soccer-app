@@ -14,7 +14,8 @@ import {
   arrayUnion,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Match, MatchFormData, Team, Venue, Player, PlayerPosition } from './types';
+import { Match, MatchFormData, Team, Venue, Player, PlayerPosition, Plan, PlayerStep, ToreisenRecord, ToreisenLevel } from './types';
+import { PLAN_LIMITS } from './plans';
 
 function generateShareCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -25,47 +26,68 @@ function generateShareCode(): string {
   return code;
 }
 
+async function generateUniqueCode(field: 'shareCode' | 'coachShareCode' = 'shareCode'): Promise<string> {
+  let code = generateShareCode();
+  const existing = await getDocs(
+    query(collection(db, 'teams'), where(field, '==', code))
+  );
+  if (!existing.empty) code = generateShareCode();
+  return code;
+}
+
 // --- Team ---
 
-export async function createTeam(name: string, userId: string): Promise<Team> {
-  let shareCode = generateShareCode();
-
-  // コード重複チェック
-  const existing = await getDocs(
-    query(collection(db, 'teams'), where('shareCode', '==', shareCode))
+export async function getUserTeams(userId: string): Promise<Team[]> {
+  const snapshot = await getDocs(
+    query(collection(db, 'teams'), where('memberIds', 'array-contains', userId))
   );
-  if (!existing.empty) {
-    shareCode = generateShareCode();
-  }
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Team));
+}
 
+export async function createTeam(name: string, userId: string): Promise<Team> {
+  const shareCode = await generateUniqueCode('shareCode');
   const teamData = {
     name,
     shareCode,
     createdBy: userId,
     memberIds: [userId],
+    plan: 'free' as const,
     createdAt: Timestamp.now(),
   };
-
   const docRef = await addDoc(collection(db, 'teams'), teamData);
   return { id: docRef.id, ...teamData };
 }
 
 export async function joinTeam(shareCode: string, userId: string): Promise<Team | null> {
-  const q = query(collection(db, 'teams'), where('shareCode', '==', shareCode.toUpperCase()));
-  const snapshot = await getDocs(q);
-
+  const code = shareCode.toUpperCase();
+  const snapshot = await getDocs(
+    query(collection(db, 'teams'), where('shareCode', '==', code))
+  );
   if (snapshot.empty) return null;
 
   const teamDoc = snapshot.docs[0];
   const teamData = teamDoc.data();
 
+  // 新規参加の場合のみメンバー数制限チェック（Firestore追加前に実施）
   if (!teamData.memberIds.includes(userId)) {
+    const plan = (teamData.plan ?? 'free') as Plan;
+    const memberLimit = PLAN_LIMITS[plan]?.members ?? PLAN_LIMITS.free.members;
+    if (teamData.memberIds.length >= memberLimit) {
+      const err = new Error(`このチームはメンバーが上限（${memberLimit}人）に達しています。`) as any;
+      err.code = 'MEMBER_LIMIT_EXCEEDED';
+      err.memberLimit = memberLimit;
+      throw err;
+    }
     await updateDoc(doc(db, 'teams', teamDoc.id), {
       memberIds: arrayUnion(userId),
     });
   }
 
   return { id: teamDoc.id, ...teamData } as Team;
+}
+
+export async function updatePlayerPhoto(teamId: string, playerId: string, photoUrl: string | null): Promise<void> {
+  await updateDoc(doc(db, 'teams', teamId, 'players', playerId), { photoUrl: photoUrl ?? null });
 }
 
 export async function getTeam(teamId: string): Promise<Team | null> {
@@ -76,6 +98,19 @@ export async function getTeam(teamId: string): Promise<Team | null> {
 
 export async function updateTeamName(teamId: string, name: string): Promise<void> {
   await updateDoc(doc(db, 'teams', teamId), { name });
+}
+
+export async function updateTeamPlan(teamId: string, plan: Plan): Promise<void> {
+  await updateDoc(doc(db, 'teams', teamId), { plan });
+}
+
+// 後方互換のため残す
+export async function upgradeToPremium(teamId: string): Promise<void> {
+  await updateTeamPlan(teamId, 'family');
+}
+
+export async function downgradeToFree(teamId: string): Promise<void> {
+  await updateTeamPlan(teamId, 'free');
 }
 
 export function subscribeToTeam(teamId: string, callback: (team: Team | null) => void) {
@@ -106,6 +141,7 @@ function buildMatchData(data: MatchFormData) {
     notes: data.notes || null,
     youtubeUrl: data.youtubeUrl || null,
     status: data.status,
+    playerIds: data.playerIds ?? [],
   };
 }
 
@@ -261,5 +297,167 @@ export function subscribeToPlayers(
     callback(players);
   }, (error) => {
     console.error('[Firestore] subscribeToPlayers error:', error.code, error.message);
+  });
+}
+
+// --- Player Steps（ファミリープラン：子どもの所属履歴）---
+
+export async function createPlayerStep(
+  teamId: string,
+  playerId: string,
+  data: {
+    teamName: string;
+    number?: number;
+    positions: PlayerPosition[];
+    startDate: Date;
+    endDate?: Date;
+    note?: string;
+  }
+): Promise<PlayerStep> {
+  const stepData = {
+    playerId,
+    teamId,
+    teamName: data.teamName,
+    number: data.number ?? null,
+    positions: data.positions,
+    startDate: Timestamp.fromDate(data.startDate),
+    endDate: data.endDate ? Timestamp.fromDate(data.endDate) : null,
+    note: data.note || null,
+    createdAt: Timestamp.now(),
+  };
+  const docRef = await addDoc(
+    collection(db, 'teams', teamId, 'players', playerId, 'steps'),
+    stepData
+  );
+  return { id: docRef.id, ...stepData } as PlayerStep;
+}
+
+export async function updatePlayerStep(
+  teamId: string,
+  playerId: string,
+  stepId: string,
+  data: {
+    teamName?: string;
+    number?: number | null;
+    positions?: PlayerPosition[];
+    startDate?: Date;
+    endDate?: Date | null;
+    note?: string;
+  }
+): Promise<void> {
+  const updateData: Record<string, unknown> = {};
+  if (data.teamName !== undefined) updateData.teamName = data.teamName;
+  if (data.number !== undefined) updateData.number = data.number;
+  if (data.positions !== undefined) updateData.positions = data.positions;
+  if (data.startDate !== undefined) updateData.startDate = Timestamp.fromDate(data.startDate);
+  if (data.endDate !== undefined) updateData.endDate = data.endDate ? Timestamp.fromDate(data.endDate) : null;
+  if (data.note !== undefined) updateData.note = data.note || null;
+  await updateDoc(
+    doc(db, 'teams', teamId, 'players', playerId, 'steps', stepId),
+    updateData
+  );
+}
+
+export async function deletePlayerStep(
+  teamId: string,
+  playerId: string,
+  stepId: string
+): Promise<void> {
+  await deleteDoc(doc(db, 'teams', teamId, 'players', playerId, 'steps', stepId));
+}
+
+export function subscribeToPlayerSteps(
+  teamId: string,
+  playerId: string,
+  callback: (steps: PlayerStep[]) => void
+) {
+  const q = query(
+    collection(db, 'teams', teamId, 'players', playerId, 'steps'),
+    orderBy('startDate', 'desc')
+  );
+  return onSnapshot(q, (snapshot) => {
+    const steps = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as PlayerStep[];
+    callback(steps);
+  }, (error) => {
+    console.error('[Firestore] subscribeToPlayerSteps error:', error.code, error.message);
+  });
+}
+
+// --- Toreisen（トレセン歴）---
+
+export async function createToreisenRecord(
+  teamId: string,
+  playerId: string,
+  data: {
+    level: ToreisenRecord['level'];
+    levelLabel: string;
+    year: number;
+    ageGroup?: string;
+    note?: string;
+  }
+): Promise<ToreisenRecord> {
+  const record = {
+    playerId,
+    teamId,
+    level: data.level,
+    levelLabel: data.levelLabel,
+    year: data.year,
+    ageGroup: data.ageGroup ?? null,
+    note: data.note ?? null,
+    createdAt: Timestamp.now(),
+  };
+  const docRef = await addDoc(
+    collection(db, 'teams', teamId, 'players', playerId, 'toreisen'),
+    record
+  );
+  return { id: docRef.id, ...record } as ToreisenRecord;
+}
+
+export async function updateToreisenRecord(
+  teamId: string,
+  playerId: string,
+  recordId: string,
+  data: {
+    level: ToreisenRecord['level'];
+    levelLabel: string;
+    year: number;
+    ageGroup?: string;
+    note?: string;
+  }
+): Promise<void> {
+  await updateDoc(doc(db, 'teams', teamId, 'players', playerId, 'toreisen', recordId), {
+    level: data.level,
+    levelLabel: data.levelLabel,
+    year: data.year,
+    ageGroup: data.ageGroup ?? null,
+    note: data.note ?? null,
+  });
+}
+
+export async function deleteToreisenRecord(
+  teamId: string,
+  playerId: string,
+  recordId: string
+): Promise<void> {
+  await deleteDoc(doc(db, 'teams', teamId, 'players', playerId, 'toreisen', recordId));
+}
+
+export function subscribeToToreisenRecords(
+  teamId: string,
+  playerId: string,
+  callback: (records: ToreisenRecord[]) => void
+) {
+  const q = query(
+    collection(db, 'teams', teamId, 'players', playerId, 'toreisen'),
+    orderBy('year', 'desc')
+  );
+  return onSnapshot(q, (snapshot) => {
+    const records = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as ToreisenRecord[];
+    callback(records);
+  }, (error) => {
+    console.error('[Firestore] subscribeToToreisenRecords error:', error.code, error.message);
   });
 }

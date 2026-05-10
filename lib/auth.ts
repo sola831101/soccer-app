@@ -4,12 +4,53 @@ import {
   GoogleAuthProvider,
   linkWithCredential,
   signInWithCredential,
+  signInWithEmailAndPassword,
   User,
 } from 'firebase/auth';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as AuthSession from 'expo-auth-session';
 import * as Crypto from 'expo-crypto';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth } from './firebase';
+
+const fns = getFunctions();
+
+// ============================
+// Email OTP 認証
+// ============================
+
+const FUNCTIONS_BASE = 'https://us-central1-soccer-app-93aa4.cloudfunctions.net';
+
+export async function sendOTP(email: string): Promise<void> {
+  const res = await fetch(`${FUNCTIONS_BASE}/sendOTP`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error ?? 'メール送信に失敗しました');
+  }
+}
+
+export async function verifyOTPAndSignIn(email: string, code: string): Promise<string> {
+  const res = await fetch(`${FUNCTIONS_BASE}/verifyOTP`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  });
+  const text = await res.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch { throw new Error(`サーバーエラー: ${text.slice(0, 100)}`); }
+  if (!res.ok) throw new Error(data.error ?? 'コードの確認に失敗しました');
+  await signInWithEmailAndPassword(auth, email, data.tempPassword);
+  return data.uid;
+}
+
+export async function linkEmailToCurrentUser(email: string, code: string): Promise<void> {
+  const fn = httpsCallable(fns, 'linkEmailToUser');
+  await fn({ email, code });
+}
 
 // ============================
 // Apple Sign-In (iOS only)

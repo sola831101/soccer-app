@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../firebase';
-import { Team, Match, Venue, Player } from '../types';
-import { subscribeToTeam, subscribeToMatches, subscribeToVenues, subscribeToPlayers } from '../firestore';
+import { Team, Match, Venue, Player, Plan } from '../types';
+import { subscribeToTeam, subscribeToMatches, subscribeToVenues, subscribeToPlayers, updateTeamPlan } from '../firestore';
+import { PLAN_LIMITS, hasFeature, Plan as PlanType } from '../plans';
+import { configurePurchases, getCustomerInfo } from '../purchases';
 
 interface TeamContextType {
   user: User | null;
@@ -12,10 +14,17 @@ interface TeamContextType {
   venues: Venue[];
   players: Player[];
   loading: boolean;
+  authLoading: boolean;
   teamId: string | null;
   setTeamId: (id: string | null) => void;
   upcomingMatches: Match[];
   recentResults: Match[];
+  plan: Plan;
+  isPremium: boolean;
+  memberCount: number;
+  hasFeature: (feature: Parameters<typeof hasFeature>[1]) => boolean;
+  syncPurchaseState: (newPlan?: PlanType) => Promise<void>;
+  isEmailLinked: boolean;
 }
 
 const TeamContext = createContext<TeamContextType>({
@@ -25,10 +34,17 @@ const TeamContext = createContext<TeamContextType>({
   venues: [],
   players: [],
   loading: true,
+  authLoading: true,
   teamId: null,
   setTeamId: () => {},
   upcomingMatches: [],
   recentResults: [],
+  plan: 'free',
+  isPremium: false,
+  memberCount: 0,
+  hasFeature: () => false,
+  syncPurchaseState: async () => {},
+  isEmailLinked: false,
 });
 
 export function useTeam() {
@@ -40,10 +56,11 @@ const TEAM_ID_KEY = 'soccer_app_team_id';
 export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
   const [teamId, setTeamIdState] = useState<string | null>(null);
 
   const setTeamId = useCallback(async (id: string | null) => {
@@ -55,14 +72,17 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Anonymous Auth
+  // Auth状態監視（メール認証 or カスタムトークン）
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUser(user);
-      } else {
-        const result = await signInAnonymously(auth);
-        setUser(result.user);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      setAuthLoading(false);
+      if (firebaseUser) {
+        try {
+          await configurePurchases(firebaseUser.uid);
+        } catch (e) {
+          console.warn('[Purchases] configure error:', e);
+        }
       }
     });
     return unsubscribe;
@@ -76,12 +96,12 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Subscribe to team（user が確定してから購読開始）
+  // Subscribe to team
   useEffect(() => {
     if (!teamId || !user) {
       if (!teamId) {
         setTeam(null);
-        setMatches([]);
+        setAllMatches([]);
         setVenues([]);
         setPlayers([]);
       }
@@ -89,7 +109,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     }
 
     const unsubTeam = subscribeToTeam(teamId, setTeam);
-    const unsubMatches = subscribeToMatches(teamId, setMatches);
+    const unsubMatches = subscribeToMatches(teamId, setAllMatches);
     const unsubVenues = subscribeToVenues(teamId, setVenues);
     const unsubPlayers = subscribeToPlayers(teamId, setPlayers);
 
@@ -101,7 +121,48 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     };
   }, [teamId, user]);
 
-  // スコア有無で振り分け（statusフィールドに依存しない）
+  const plan: Plan = (team?.plan ?? 'free') as Plan;
+  const isPremium = plan !== 'free';
+  const isEmailLinked = !!(user && !user.isAnonymous);
+
+  const memberCount = useMemo(() => team?.memberIds?.length ?? 0, [team]);
+
+
+  // RevenueCat の購入状態を Firestore と同期
+  const syncPurchaseState = useCallback(async (newPlan?: PlanType) => {
+    if (!teamId) return;
+    try {
+      if (newPlan) {
+        await updateTeamPlan(teamId, newPlan);
+        return;
+      }
+      const customerInfo = await getCustomerInfo();
+      if (!customerInfo) return;
+      // entitlement から適切なプランを判定（RevenueCat設定後に詳細実装）
+      const activePlan = (customerInfo.entitlements.active['premium'] ? 'family'
+        : 'free') as PlanType;
+      await updateTeamPlan(teamId, activePlan);
+    } catch (e) {
+      console.error('[Purchases] syncPurchaseState error:', e);
+    }
+  }, [teamId]);
+
+  // 起動時に購入状態を同期
+  useEffect(() => {
+    if (teamId && user) {
+      syncPurchaseState();
+    }
+  }, [teamId, user, syncPurchaseState]);
+
+  // 無料プランはデータ保持12ヶ月に制限
+  const matches = useMemo(() => {
+    if (isPremium) return allMatches;
+    const retentionMonths = PLAN_LIMITS.free.dataRetentionMonths;
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - retentionMonths);
+    return allMatches.filter((m) => m.date.toDate() >= cutoff);
+  }, [allMatches, isPremium]);
+
   const upcomingMatches = useMemo(() => {
     return matches
       .filter((m) => m.scoreHome == null || m.scoreAway == null)
@@ -116,6 +177,11 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       .slice(0, 10);
   }, [matches]);
 
+  const hasFeatureFn = useCallback(
+    (feature: Parameters<typeof hasFeature>[1]) => hasFeature(plan as PlanType, feature),
+    [plan]
+  );
+
   return (
     <TeamContext.Provider
       value={{
@@ -125,10 +191,17 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         venues,
         players,
         loading,
+        authLoading,
         teamId,
         setTeamId,
         upcomingMatches,
         recentResults,
+        plan,
+        isPremium,
+        memberCount,
+        hasFeature: hasFeatureFn,
+        syncPurchaseState,
+        isEmailLinked,
       }}
     >
       {children}

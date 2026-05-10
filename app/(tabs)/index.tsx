@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,26 +8,57 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { theme, fontSize, spacing, borderRadius } from '../../constants/theme';
+import { theme, fontSize, spacing } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
 import { MatchCard } from '../../components/MatchCard';
 import { EmptyState } from '../../components/EmptyState';
 import { AdBanner } from '../../components/AdBanner';
+import { PlayerHeroCard } from '../../components/PlayerHeroCard';
+import { subscribeToPlayerSteps } from '../../lib/firestore';
+import { PlayerStep } from '../../lib/types';
 
 export default function HomeScreen() {
-  const { team, upcomingMatches, recentResults } = useTeam();
+  const { teamId, players, matches, upcomingMatches, recentResults } = useTeam();
+
+  // playerId → 最新ステップ（現在の所属チーム取得用）
+  const [stepsMap, setStepsMap] = useState<Record<string, PlayerStep[]>>({});
+
+  useEffect(() => {
+    if (!teamId || players.length === 0) {
+      setStepsMap({});
+      return;
+    }
+
+    const unsubs = players.map((player) =>
+      subscribeToPlayerSteps(teamId, player.id, (steps) => {
+        setStepsMap((prev) => ({ ...prev, [player.id]: steps }));
+      })
+    );
+
+    return () => unsubs.forEach((unsub) => unsub());
+  }, [teamId, players]);
+
+  // playerId → 現在の所属チーム名（endDateなし = 在籍中を優先、なければ最新）
+  const currentTeams: Record<string, string | null> = {};
+  for (const player of players) {
+    const steps = stepsMap[player.id] ?? [];
+    const current = steps.find((s) => !s.endDate) ?? steps[0] ?? null;
+    currentTeams[player.id] = current?.teamName ?? null;
+  }
 
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* ヘッダー */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.teamName}>{team?.name || 'チーム'}</Text>
-            <Text style={styles.headerSub}>試合スケジュール</Text>
-          </View>
-          <Ionicons name="football" size={32} color={theme.primary} />
-        </View>
+        {/* 選手カード */}
+        {players.length > 0 && (
+          <PlayerHeroCard
+            players={players}
+            matches={matches}
+            currentTeams={currentTeams}
+          />
+        )}
+
+        <AdBanner />
 
         {/* 次の試合 */}
         <Text style={styles.sectionTitle}>試合の予定</Text>
@@ -42,6 +73,7 @@ export default function HomeScreen() {
             <MatchCard
               key={match.id}
               match={match}
+              players={players}
               onPress={() => router.push(`/match/${match.id}`)}
             />
           ))
@@ -57,9 +89,11 @@ export default function HomeScreen() {
               <MatchCard
                 key={match.id}
                 match={match}
+                players={players}
                 onPress={() => router.push(`/match/${match.id}`)}
               />
             ))}
+            <AdBanner />
           </>
         )}
       </ScrollView>
@@ -84,23 +118,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.md,
     paddingBottom: 100,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  teamName: {
-    fontSize: fontSize.xl,
-    fontWeight: '800',
-    color: theme.text,
-  },
-  headerSub: {
-    fontSize: fontSize.sm,
-    color: theme.textSecondary,
-    marginTop: 2,
   },
   sectionTitle: {
     fontSize: fontSize.md,

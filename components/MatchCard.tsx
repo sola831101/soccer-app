@@ -2,13 +2,14 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
-import { Match } from '../lib/types';
+import { Match, Player } from '../lib/types';
 import { MatchTypeBadge } from './MatchTypeBadge';
 import { ScoreDisplay } from './ScoreDisplay';
 
 interface Props {
   match: Match;
   onPress: () => void;
+  players?: Player[];
 }
 
 function formatDate(date: Date): string {
@@ -21,11 +22,15 @@ function formatDate(date: Date): string {
   return `${m}/${d}(${day}) ${h}:${min}`;
 }
 
-export function MatchCard({ match, onPress }: Props) {
+export function MatchCard({ match, onPress, players = [] }: Props) {
   const date = match.date.toDate();
   const hasScore = match.scoreHome != null && match.scoreAway != null;
   const now = new Date();
   const needsResult = date < now && !hasScore;
+
+  const matchPlayers = (match.playerIds ?? [])
+    .map((id) => players.find((p) => p.id === id))
+    .filter(Boolean) as Player[];
 
   return (
     <TouchableOpacity
@@ -68,6 +73,17 @@ export function MatchCard({ match, onPress }: Props) {
         </View>
         <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
       </View>
+
+      {matchPlayers.length > 0 && (
+        <View style={styles.playersRow}>
+          <Ionicons name="person-outline" size={12} color={theme.primary} />
+          {matchPlayers.map((p) => (
+            <View key={p.id} style={styles.playerPill}>
+              <Text style={styles.playerPillText}>{p.name}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -150,5 +166,26 @@ const styles = StyleSheet.create({
   venue: {
     fontSize: fontSize.xs,
     color: theme.textSecondary,
+  },
+  playersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
+  },
+  playerPill: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  playerPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: theme.primary,
   },
 });

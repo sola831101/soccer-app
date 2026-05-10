@@ -1,9 +1,25 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { TeamProvider } from '../lib/context/TeamContext';
 import { theme } from '../constants/theme';
 
+const isExpoGo = Constants.appOwnership === 'expo';
+
+function useTrackingPermission() {
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || isExpoGo) return;
+    let mobileAds: any = null;
+    try { mobileAds = require('react-native-google-mobile-ads'); } catch { return; }
+    mobileAds.requestTrackingTransparencyPermission?.().catch(() => {});
+  }, []);
+}
+
 export default function RootLayout() {
+  useTrackingPermission();
+
   return (
     <TeamProvider>
       <StatusBar style="dark" />
@@ -27,15 +43,19 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="match/[id]"
-          options={{ title: '試合詳細', headerBackVisible: false }}
+          options={{ title: '試合詳細' }}
         />
         <Stack.Screen
           name="venues"
-          options={{ title: '会場管理', headerBackTitle: '' }}
+          options={{ title: '会場管理', headerBackTitle: ' ', headerBackVisible: true }}
         />
         <Stack.Screen
           name="players"
-          options={{ title: '選手管理', headerBackTitle: '' }}
+          options={{ title: '選手情報', headerBackTitle: ' ' }}
+        />
+        <Stack.Screen
+          name="player/[id]"
+          options={{ title: '選手詳細', headerBackTitle: ' ' }}
         />
       </Stack>
     </TeamProvider>

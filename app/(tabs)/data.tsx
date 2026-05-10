@@ -7,18 +7,50 @@ import { computeStats, computeOpponentStats, getAvailableFiscalYears } from '../
 import { AdBanner } from '../../components/AdBanner';
 
 export default function DataScreen() {
-  const { matches } = useTeam();
+  const { matches, players } = useTeam();
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(undefined);
 
   const fiscalYears = useMemo(() => getAvailableFiscalYears(matches), [matches]);
 
-  const stats = useMemo(() => computeStats(matches, selectedYear), [matches, selectedYear]);
-  const opponentStats = useMemo(() => computeOpponentStats(matches, selectedYear), [matches, selectedYear]);
+  // 選手フィルター：選択中の選手が出場した試合のみ
+  const filteredMatches = useMemo(() => {
+    if (!selectedPlayerId) return matches;
+    return matches.filter((m) => (m.playerIds ?? []).includes(selectedPlayerId));
+  }, [matches, selectedPlayerId]);
 
-  const completedCount = matches.filter((m) => m.status === 'completed').length;
+  const stats = useMemo(() => computeStats(filteredMatches, selectedYear), [filteredMatches, selectedYear]);
+  const opponentStats = useMemo(() => computeOpponentStats(filteredMatches, selectedYear), [filteredMatches, selectedYear]);
+
+  const completedCount = filteredMatches.filter((m) => m.status === 'completed').length;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* 選手フィルター（選手が2人以上の場合のみ） */}
+      {players.length >= 2 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.yearSelector}>
+          <TouchableOpacity
+            style={[styles.yearPill, selectedPlayerId === undefined && styles.playerPillActive]}
+            onPress={() => setSelectedPlayerId(undefined)}
+          >
+            <Text style={[styles.yearPillText, selectedPlayerId === undefined && styles.playerPillTextActive]}>
+              全員
+            </Text>
+          </TouchableOpacity>
+          {players.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              style={[styles.yearPill, selectedPlayerId === p.id && styles.playerPillActive]}
+              onPress={() => setSelectedPlayerId(p.id)}
+            >
+              <Text style={[styles.yearPillText, selectedPlayerId === p.id && styles.playerPillTextActive]}>
+                {p.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
       {/* 年度セレクタ */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.yearSelector}>
         <TouchableOpacity
@@ -57,6 +89,22 @@ export default function DataScreen() {
         </View>
       ) : (
         <>
+          {/* フィルターラベル */}
+          {(selectedPlayerId || selectedYear) && (
+            <View style={styles.filterLabel}>
+              <Ionicons name="filter-outline" size={14} color={theme.primary} />
+              <Text style={styles.filterLabelText}>
+                {[
+                  selectedPlayerId ? players.find((p) => p.id === selectedPlayerId)?.name : null,
+                  selectedYear ? `${selectedYear}年度` : null,
+                ].filter(Boolean).join(' / ')}
+              </Text>
+              <TouchableOpacity onPress={() => { setSelectedPlayerId(undefined); setSelectedYear(undefined); }}>
+                <Text style={styles.filterClear}>クリア</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* 戦績カード */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>戦績</Text>
@@ -221,6 +269,13 @@ const styles = StyleSheet.create({
   yearPillTextActive: {
     color: theme.white,
   },
+  playerPillActive: {
+    backgroundColor: '#1565C0',
+    borderColor: '#1565C0',
+  },
+  playerPillTextActive: {
+    color: theme.white,
+  },
   card: {
     backgroundColor: theme.white,
     borderRadius: borderRadius.md,
@@ -313,6 +368,27 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: theme.text,
     marginTop: spacing.xs,
+  },
+  filterLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: '#E3F2FD',
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    marginBottom: spacing.md,
+  },
+  filterLabelText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: '#1565C0',
+  },
+  filterClear: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    fontWeight: '600',
   },
   emptyContainer: {
     alignItems: 'center',

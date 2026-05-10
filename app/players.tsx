@@ -12,10 +12,13 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
 import { useTeam } from '../lib/context/TeamContext';
 import { createPlayer, deletePlayer } from '../lib/firestore';
 import { Player, PlayerPosition } from '../lib/types';
+import { UpgradeModal } from '../components/UpgradeModal';
+import { PLAN_LIMITS } from '../lib/plans';
 
 interface PositionGroup {
   label: string;
@@ -68,12 +71,16 @@ function getPositionLabel(pos: PlayerPosition): string {
 }
 
 export default function PlayersScreen() {
-  const { players, teamId } = useTeam();
+  const { players, teamId, isPremium, plan } = useTeam();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [selectedPositions, setSelectedPositions] = useState<PlayerPosition[]>([]);
   const [number, setNumber] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const playerLimit = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS]?.players ?? PLAN_LIMITS.free.players;
+  const atLimit = players.length >= playerLimit;
 
   const togglePosition = (pos: PlayerPosition) => {
     setSelectedPositions((prev) =>
@@ -91,6 +98,12 @@ export default function PlayersScreen() {
       return;
     }
     if (!teamId) return;
+
+    if (atLimit) {
+      setShowForm(false);
+      setShowUpgrade(true);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -125,7 +138,10 @@ export default function PlayersScreen() {
   const renderPlayer = ({ item }: { item: Player }) => {
     const positions = item.positions || [];
     return (
-      <View style={styles.playerCard}>
+      <TouchableOpacity
+        style={styles.playerCard}
+        onPress={() => router.push(`/player/${item.id}`)}
+      >
         <View style={styles.playerInfo}>
           <View style={styles.nameRow}>
             <Text style={styles.playerName}>{item.name}</Text>
@@ -141,10 +157,13 @@ export default function PlayersScreen() {
             ))}
           </View>
         </View>
-        <TouchableOpacity onPress={() => handleDelete(item)} style={styles.deleteBtn}>
-          <Ionicons name="trash-outline" size={20} color={theme.danger} />
-        </TouchableOpacity>
-      </View>
+        <View style={styles.playerActions}>
+          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+          <TouchableOpacity onPress={() => handleDelete(item)} style={styles.deleteBtn}>
+            <Ionicons name="trash-outline" size={20} color={theme.danger} />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -153,6 +172,12 @@ export default function PlayersScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgrade={() => setShowUpgrade(false)}
+        reason={`無料プランは選手を${PLAN_LIMITS.free.players}人まで登録できます。プレミアムは30人まで対応しています。`}
+      />
       <FlatList
         data={players}
         keyExtractor={(item) => item.id}
@@ -241,13 +266,32 @@ export default function PlayersScreen() {
               </View>
             </View>
           ) : (
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => setShowForm(true)}
-            >
-              <Ionicons name="add-circle-outline" size={22} color={theme.primary} />
-              <Text style={styles.addButtonText}>選手を追加</Text>
-            </TouchableOpacity>
+            <View>
+              {!isPremium && (
+                <Text style={styles.limitText}>
+                  {players.length} / {playerLimit}人
+                </Text>
+              )}
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => {
+                  if (atLimit) {
+                    setShowUpgrade(true);
+                  } else {
+                    setShowForm(true);
+                  }
+                }}
+              >
+                <Ionicons
+                  name={atLimit ? 'lock-closed-outline' : 'add-circle-outline'}
+                  size={22}
+                  color={atLimit ? theme.textSecondary : theme.primary}
+                />
+                <Text style={[styles.addButtonText, atLimit && { color: theme.textSecondary }]}>
+                  {atLimit ? `上限（${playerLimit}人）に達しました` : '選手を追加'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )
         }
       />
@@ -307,6 +351,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.white,
   },
+  playerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   deleteBtn: {
     padding: spacing.sm,
   },
@@ -326,6 +375,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  limitText: {
+    textAlign: 'center',
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    marginTop: spacing.md,
   },
   addButton: {
     flexDirection: 'row',

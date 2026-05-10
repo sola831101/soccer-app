@@ -28,7 +28,7 @@ interface Props {
 }
 
 export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props) {
-  const { venues, teamId } = useTeam();
+  const { venues, teamId, players } = useTeam();
   const [date, setDate] = useState(initialData?.date || new Date());
   const [androidPickerMode, setAndroidPickerMode] = useState<'date' | 'time' | null>(null);
   const [opponent, setOpponent] = useState(initialData?.opponent || '');
@@ -43,6 +43,13 @@ export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props)
   const [scoreAway, setScoreAway] = useState(initialData?.scoreAway?.toString() || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [youtubeUrl, setYoutubeUrl] = useState(initialData?.youtubeUrl || '');
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(initialData?.playerIds ?? []);
+
+  const togglePlayer = (playerId: string) => {
+    setSelectedPlayerIds((prev) =>
+      prev.includes(playerId) ? prev.filter((id) => id !== playerId) : [...prev, playerId]
+    );
+  };
 
   // ステータスは日付から自動判定
   const status: MatchStatus = date < new Date() ? 'completed' : 'upcoming';
@@ -87,6 +94,7 @@ export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props)
       notes: notes.trim() || undefined,
       youtubeUrl: youtubeUrl.trim() || undefined,
       status,
+      playerIds: selectedPlayerIds,
     };
 
     onSubmit(formData);
@@ -326,6 +334,29 @@ export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props)
                   textAlign="center"
                 />
               </View>
+            </View>
+          </>
+        )}
+
+        {/* 出場選手 */}
+        {players.length > 0 && (
+          <>
+            <Text style={styles.label}>出場選手</Text>
+            <View style={styles.playerChipsRow}>
+              {players.map((p) => {
+                const selected = selectedPlayerIds.includes(p.id);
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.playerChip, selected && styles.playerChipSelected]}
+                    onPress={() => togglePlayer(p.id)}
+                  >
+                    <Text style={[styles.playerChipText, selected && styles.playerChipTextSelected]}>
+                      {p.number != null ? `#${p.number} ` : ''}{p.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </>
         )}
@@ -655,5 +686,30 @@ const styles = StyleSheet.create({
     color: theme.textSecondary,
     paddingVertical: spacing.lg,
     fontSize: fontSize.sm,
+  },
+  playerChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  playerChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.white,
+  },
+  playerChipSelected: {
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
+  },
+  playerChipText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: theme.textSecondary,
+  },
+  playerChipTextSelected: {
+    color: theme.white,
   },
 });

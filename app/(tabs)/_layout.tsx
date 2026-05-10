@@ -1,13 +1,16 @@
 import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, View } from 'react-native';
+import { useState } from 'react';
 import { theme } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
+import { EmailLinkModal } from '../../components/EmailLinkModal';
 
 export default function TabLayout() {
-  const { teamId, loading } = useTeam();
+  const { teamId, loading, authLoading, isEmailLinked, user } = useTeam();
+  const [emailLinkedLocally, setEmailLinkedLocally] = useState(false);
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -19,7 +22,16 @@ export default function TabLayout() {
     return <Redirect href="/onboarding" />;
   }
 
+  const needsEmailRegistration = !!user && !isEmailLinked && !emailLinkedLocally;
+
   return (
+    <>
+      <EmailLinkModal
+        visible={needsEmailRegistration}
+        onClose={() => {}}
+        onSuccess={() => setEmailLinkedLocally(true)}
+        forced
+      />
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: theme.primary,
@@ -69,5 +81,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }
