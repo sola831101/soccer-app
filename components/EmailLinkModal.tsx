@@ -67,7 +67,8 @@ export function EmailLinkModal({ visible, onClose, onSuccess, forced = false }: 
         await linkEmailToCurrentUser(email.trim().toLowerCase(), otpCode.trim());
       } catch (e: any) {
         // 既存アカウントが存在する場合はそのアカウントでサインインし直す
-        if (e?.code === 'already-exists') {
+        // Firebase Callable の HttpsError コードは 'functions/already-exists' 形式
+        if (e?.code === 'functions/already-exists' || e?.code === 'already-exists') {
           await verifyOTPAndSignIn(email.trim().toLowerCase(), otpCode.trim());
         } else {
           throw e;

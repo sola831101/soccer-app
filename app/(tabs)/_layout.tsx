@@ -1,14 +1,32 @@
 import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, View } from 'react-native';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
 import { EmailLinkModal } from '../../components/EmailLinkModal';
 
+const EMAIL_LINKED_KEY = 'email_linked_permanently';
+
 export default function TabLayout() {
   const { teamId, loading, authLoading, isEmailLinked, user } = useTeam();
   const [emailLinkedLocally, setEmailLinkedLocally] = useState(false);
+
+  // 永続化されたメール登録フラグを読み込む
+  useEffect(() => {
+    AsyncStorage.getItem(EMAIL_LINKED_KEY).then((val) => {
+      if (val === 'true') setEmailLinkedLocally(true);
+    });
+  }, []);
+
+  // isEmailLinkedがtrueになったら永続化
+  useEffect(() => {
+    if (isEmailLinked) {
+      AsyncStorage.setItem(EMAIL_LINKED_KEY, 'true');
+      setEmailLinkedLocally(true);
+    }
+  }, [isEmailLinked]);
 
   if (loading || authLoading) {
     return (
@@ -19,6 +37,11 @@ export default function TabLayout() {
   }
 
   if (!teamId) {
+    return <Redirect href="/onboarding" />;
+  }
+
+  // セッション消失時（メール登録済みだがAuthがnull）はオンボーディングで再認証
+  if (!user) {
     return <Redirect href="/onboarding" />;
   }
 

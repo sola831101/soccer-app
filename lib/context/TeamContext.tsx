@@ -78,8 +78,11 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       if (!firebaseUser) {
         // 旧バージョンからのアップデートユーザー向け：
         // teamIdがあるのにAuthがない場合は匿名ログインしてメール登録モーダルを出す
+        // ただしメール登録済みユーザーの場合はセッション消失の可能性があるため
+        // 匿名サインインせず、_layout.tsxのリダイレクトでオンボーディングへ誘導する
         const savedTeamId = await AsyncStorage.getItem(TEAM_ID_KEY);
-        if (savedTeamId) {
+        const emailLinked = await AsyncStorage.getItem('email_linked_permanently');
+        if (savedTeamId && !emailLinked) {
           try {
             await signInAnonymously(auth);
             // onAuthStateChangedが再度発火するのでここではreturn
