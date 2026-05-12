@@ -15,6 +15,9 @@ const transporter = nodemailer.createTransport({
 
 const OTP_EXPIRY_MS = 10 * 60 * 1000; // 10分
 const MAX_ATTEMPTS = 5;
+const OTP_RESEND_INTERVAL_MS = 60 * 1000; // 再送インターバル: 60秒
+const IP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // IPレート制限ウィンドウ: 1分
+const IP_RATE_LIMIT_MAX = 10; // 1分間に同一IPから最大10リクエスト
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -42,10 +45,42 @@ export const sendOTP = functions.https.onRequest(async (req, res) => {
     return;
   }
 
-  const code = generateOTP();
-  const expiresAt = Date.now() + OTP_EXPIRY_MS;
+  // IPレート制限: 同一IPから1分間に10回まで
+  const clientIp = (req.headers['x-forwarded-for'] as string ?? req.ip ?? 'unknown').split(',')[0].trim();
+  const ipRateLimitRef = db.collection('ipRateLimits').doc(clientIp.replace(/[^a-zA-Z0-9]/g, '_'));
+  const ipRateLimitDoc = await ipRateLimitRef.get();
+  const now = Date.now();
+  if (ipRateLimitDoc.exists) {
+    const data = ipRateLimitDoc.data()!;
+    if (now - data.windowStart < IP_RATE_LIMIT_WINDOW_MS) {
+      if (data.count >= IP_RATE_LIMIT_MAX) {
+        res.status(429).json({ error: 'リクエストが多すぎます。しばらく待ってからお試しください' });
+        return;
+      }
+      await ipRateLimitRef.update({ count: data.count + 1 });
+    } else {
+      await ipRateLimitRef.set({ windowStart: now, count: 1 });
+    }
+  } else {
+    await ipRateLimitRef.set({ windowStart: now, count: 1 });
+  }
 
-  await db.collection('otps').doc(email).set({ code, expiresAt, attempts: 0 });
+  // メールアドレスへの再送インターバル制限: 60秒に1回まで
+  const existingOtp = await db.collection('otps').doc(email).get();
+  if (existingOtp.exists) {
+    const data = existingOtp.data()!;
+    const sentAt = data.sentAt ?? 0;
+    if (now - sentAt < OTP_RESEND_INTERVAL_MS) {
+      const remainSec = Math.ceil((OTP_RESEND_INTERVAL_MS - (now - sentAt)) / 1000);
+      res.status(429).json({ error: `${remainSec}秒後に再送できます` });
+      return;
+    }
+  }
+
+  const code = generateOTP();
+  const expiresAt = now + OTP_EXPIRY_MS;
+
+  await db.collection('otps').doc(email).set({ code, expiresAt, attempts: 0, sentAt: now });
 
   await transporter.sendMail({
     from: `サカログ <${GMAIL_USER}>`,
