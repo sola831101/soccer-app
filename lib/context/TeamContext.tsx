@@ -158,10 +158,12 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       }
       const customerInfo = await getCustomerInfo();
       if (!customerInfo) return;
-      // entitlement から適切なプランを判定（RevenueCat設定後に詳細実装）
-      const activePlan = (customerInfo.entitlements.active['premium'] ? 'family'
-        : 'free') as PlanType;
-      await updateTeamPlan(teamId, activePlan);
+      // RC が premium entitlement を確認できた場合のみ Firestore を family に更新
+      // RC が未確認でも自動ダウングレードはしない（Firestore の plan を正とする）
+      const hasPremium = !!customerInfo.entitlements.active['premium'];
+      if (hasPremium) {
+        await updateTeamPlan(teamId, 'family');
+      }
     } catch (e) {
       console.error('[Purchases] syncPurchaseState error:', e);
     }
