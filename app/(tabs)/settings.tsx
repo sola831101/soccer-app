@@ -18,6 +18,7 @@ import { updateTeamName, updateTeamPlan } from '../../lib/firestore';
 import { UpgradeModal } from '../../components/UpgradeModal';
 import { EmailLinkModal } from '../../components/EmailLinkModal';
 import { PLAN_LIMITS, PLAN_DISPLAY } from '../../lib/plans';
+import Constants from 'expo-constants';
 
 export default function SettingsScreen() {
   const { team, teamId, setTeamId, user, isPremium, plan, matches, venues, players, memberCount, isEmailLinked } = useTeam();
@@ -239,6 +240,9 @@ export default function SettingsScreen() {
         <Text style={styles.leaveText}>チームから退出</Text>
       </TouchableOpacity>
 
+      {/* バージョン表示 */}
+      <Text style={styles.versionText}>バージョン {Constants.expoConfig?.version ?? ''}</Text>
+
       {/* デバッグ用プラン切り替え（開発時・管理者のみ） */}
       {__DEV__ && teamId && isAdmin && (
         <View style={styles.debugSection}>
@@ -399,6 +403,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   leaveText: { color: theme.danger, fontSize: fontSize.md, fontWeight: '600' },
+  versionText: { textAlign: 'center', color: theme.textSecondary, fontSize: fontSize.xs, marginBottom: spacing.sm },
   debugSection: {
     margin: spacing.md,
     marginTop: 0,

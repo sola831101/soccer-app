@@ -18,7 +18,7 @@ import { subscribeToPlayerSteps } from '../../lib/firestore';
 import { PlayerStep } from '../../lib/types';
 
 export default function HomeScreen() {
-  const { teamId, players, matches, upcomingMatches, recentResults } = useTeam();
+  const { teamId, players, matches, upcomingMatches, recentResults, loading } = useTeam();
 
   // playerId → 最新ステップ（現在の所属チーム取得用）
   const [stepsMap, setStepsMap] = useState<Record<string, PlayerStep[]>>({});
@@ -62,7 +62,7 @@ export default function HomeScreen() {
 
         {/* 次の試合 */}
         <Text style={styles.sectionTitle}>試合の予定</Text>
-        {upcomingMatches.length === 0 ? (
+        {!loading && upcomingMatches.length === 0 ? (
           <EmptyState
             icon="calendar-outline"
             title="予定なし"

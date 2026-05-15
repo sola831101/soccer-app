@@ -77,8 +77,8 @@ export default function MatchDetailScreen() {
           options={{
             title: '試合を編集',
             headerLeft: () => (
-              <TouchableOpacity onPress={() => setEditing(false)}>
-                <Text style={{ color: theme.primary, fontSize: fontSize.md }}>キャンセル</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)')}>
+                <Text style={{ color: theme.primary, fontSize: fontSize.md }}>ホームに戻る</Text>
               </TouchableOpacity>
             ),
           }}

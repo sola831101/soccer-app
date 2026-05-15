@@ -35,7 +35,8 @@ export default function RootLayout() {
           headerStyle: { backgroundColor: theme.background },
           headerTintColor: theme.primary,
           headerTitleStyle: { fontWeight: '600', color: theme.text },
-          headerBackTitle: ' ',
+          headerBackTitle: '',
+          headerBackButtonDisplayMode: 'minimal',
           contentStyle: { backgroundColor: theme.background },
         }}
       >
@@ -54,15 +55,15 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="venues"
-          options={{ title: '会場管理', headerBackTitle: ' ', headerBackVisible: true }}
+          options={{ title: '会場管理', headerBackVisible: true }}
         />
         <Stack.Screen
           name="players"
-          options={{ title: '選手情報', headerBackTitle: ' ' }}
+          options={{ title: '選手情報' }}
         />
         <Stack.Screen
           name="player/[id]"
-          options={{ title: '選手詳細', headerBackTitle: ' ' }}
+          options={{ title: '選手詳細' }}
         />
       </Stack>
     </TeamProvider>

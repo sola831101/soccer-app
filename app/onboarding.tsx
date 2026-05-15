@@ -195,7 +195,7 @@ export default function OnboardingScreen() {
             value={otpCode}
             onChangeText={(t) => setOtpCode(t.replace(/[^0-9]/g, ''))}
             placeholder="000000"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor="#CCCCCC"
             keyboardType="number-pad"
             maxLength={6}
             autoFocus
