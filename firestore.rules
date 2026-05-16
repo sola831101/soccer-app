@@ -2,6 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // アプリバージョン設定（強制アップデート判定用）
+    // 認証前の起動チェックで参照するため未認証でもread可。書き込みはFirebase Consoleからのみ。
+    match /config/{document} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // OTP（Functionsのみ書き込み可、クライアントからアクセス不可）
     match /otps/{email} {
       allow read, write: if false;

@@ -1,11 +1,13 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Sentry from '@sentry/react-native';
 import { TeamProvider } from '../lib/context/TeamContext';
 import { theme } from '../constants/theme';
+import { ForceUpdateModal } from '../components/ForceUpdateModal';
+import { AppVersionConfig, needsForceUpdate, subscribeToAppVersion } from '../lib/version';
 
 Sentry.init({
   dsn: Constants.expoConfig?.extra?.sentryDsn ?? '',
@@ -27,9 +29,17 @@ function useTrackingPermission() {
 export default function RootLayout() {
   useTrackingPermission();
 
+  const [versionConfig, setVersionConfig] = useState<AppVersionConfig | null>(null);
+  useEffect(() => {
+    const unsub = subscribeToAppVersion(setVersionConfig);
+    return unsub;
+  }, []);
+  const forceUpdate = needsForceUpdate(versionConfig);
+
   return (
     <TeamProvider>
       <StatusBar style="dark" />
+      <ForceUpdateModal visible={forceUpdate} config={versionConfig} />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: theme.background },
@@ -64,6 +74,14 @@ export default function RootLayout() {
         <Stack.Screen
           name="player/[id]"
           options={{ title: '選手詳細' }}
+        />
+        <Stack.Screen
+          name="settings/members"
+          options={{ title: 'グループメンバー・招待コード' }}
+        />
+        <Stack.Screen
+          name="settings/plan"
+          options={{ title: 'プラン' }}
         />
       </Stack>
     </TeamProvider>

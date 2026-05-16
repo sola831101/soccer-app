@@ -324,7 +324,16 @@ export default function PlayerDetailScreen() {
     ]);
   };
 
-  if (!player) return null;
+  if (!player) {
+    return (
+      <>
+        <Stack.Screen options={{ title: '選手詳細' }} />
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator color={theme.primary} />
+        </View>
+      </>
+    );
+  }
 
   // 出場試合の集計
   const participatedMatches = matches
@@ -343,7 +352,20 @@ export default function PlayerDetailScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: player.name }} />
+      <Stack.Screen
+        options={{
+          title: player.name,
+          headerLeft: () => (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+            >
+              <Ionicons name="chevron-back" size={28} color={theme.primary} />
+            </TouchableOpacity>
+          ),
+        }}
+      />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
         {/* 基本情報 */}

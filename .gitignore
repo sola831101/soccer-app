@@ -47,3 +47,13 @@ google-play-service-account.json
 # generated native folders
 /ios
 /android
+backups/
+scripts/backup-firestore.js
+ios/sentry.properties
+
+# Firebase config (contains API keys; not used in build)
+GoogleService-Info.plist
+
+# Firestore backup tooling and exports
+functions/backup-firestore.js
+functions/firestore-backup-*.json
