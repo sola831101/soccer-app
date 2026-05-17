@@ -67,5 +67,7 @@
 【ファミリープラン】¥300/月
 顔写真・所属履歴・トレセン選出歴の記録、広告非表示、無制限登録に対応。
 
+利用規約（EULA）: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+
 
 サカログで、お子さんのサッカーライフをもっと楽しく、もっと便利に。
