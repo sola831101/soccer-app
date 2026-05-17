@@ -161,3 +161,9 @@
 ### Android
 - 現状はiOSメインで運用
 - `versionCode` は `app.config.js` の `android.versionCode` で管理
+
+### App Store 説明文の必須要素
+- **ファミリープラン（サブスク）に関する記載がある以上、EULAリンクは必須**
+- `https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`
+- 説明文をリライト・更新する時は必ずこのリンクを保持すること
+- 削除するとサブミット時に自動リジェクトされる（過去発生）
