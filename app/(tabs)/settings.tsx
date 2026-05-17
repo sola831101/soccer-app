@@ -16,6 +16,7 @@ import { useTeam } from '../../lib/context/TeamContext';
 import { updateTeamName } from '../../lib/firestore';
 import { EmailLinkModal } from '../../components/EmailLinkModal';
 import { PLAN_DISPLAY } from '../../lib/plans';
+import { showFeedbackDialog } from '../../lib/review';
 import Constants from 'expo-constants';
 
 const FAQ_URL = 'https://sola831101.github.io/soccer-app/faq.html';
@@ -125,6 +126,14 @@ export default function SettingsScreen() {
           <Ionicons name="help-circle-outline" size={20} color={theme.primary} />
           <Text style={[styles.settingValue, { marginLeft: spacing.sm }]}>よくある質問</Text>
           <Ionicons name="open-outline" size={18} color={theme.textSecondary} />
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.section} onPress={() => showFeedbackDialog()}>
+        <View style={styles.settingRow}>
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={theme.primary} />
+          <Text style={[styles.settingValue, { marginLeft: spacing.sm }]}>アプリについてのご意見・ご感想</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
         </View>
       </TouchableOpacity>
 
