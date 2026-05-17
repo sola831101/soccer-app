@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../firebase';
 import { Team, Match, Venue, Player, Plan } from '../types';
@@ -72,29 +72,13 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Auth状態監視（メール認証 or カスタムトークン）
+  // Auth状態監視
+  // セッション復元失敗時 (firebaseUser=null) は新匿名認証を行わない。
+  // _layout.tsx / (tabs)/_layout.tsx のリダイレクトで onboarding へ誘導され、
+  // ユーザーは既存メアド入力でverifyOTP経由で旧UIDに復帰できる（新規ユーザーも同様にメール登録）。
+  // これにより新匿名UIDが発行されず、memberIdsにゴミUIDが残らない。
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        // 旧バージョンからのアップデートユーザー向け：
-        // teamIdがあるのにAuthがない場合は匿名ログインしてメール登録モーダルを出す
-        // ただしメール登録済みユーザーの場合はセッション消失の可能性があるため
-        // 匿名サインインせず、_layout.tsxのリダイレクトでオンボーディングへ誘導する
-        const savedTeamId = await AsyncStorage.getItem(TEAM_ID_KEY);
-        const emailLinked = await AsyncStorage.getItem('email_linked_permanently');
-        if (savedTeamId && !emailLinked) {
-          try {
-            await signInAnonymously(auth);
-            // onAuthStateChangedが再度発火するのでここではreturn
-            return;
-          } catch (e) {
-            console.warn('[Auth] signInAnonymously failed:', e);
-          }
-        }
-        setUser(null);
-        setAuthLoading(false);
-        return;
-      }
       setUser(firebaseUser);
       setAuthLoading(false);
       if (firebaseUser) {

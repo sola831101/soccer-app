@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme, fontSize, spacing, borderRadius } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
 import { updateTeamName } from '../../lib/firestore';
@@ -20,6 +21,7 @@ import { showFeedbackDialog } from '../../lib/review';
 import Constants from 'expo-constants';
 
 const FAQ_URL = 'https://sola831101.github.io/soccer-app/faq.html';
+const EMAIL_LINKED_KEY = 'email_linked_permanently';
 
 export default function SettingsScreen() {
   const { team, teamId, plan, isEmailLinked } = useTeam();
@@ -27,6 +29,22 @@ export default function SettingsScreen() {
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState(team?.name || '');
   const [showEmailLink, setShowEmailLink] = useState(false);
+  const [emailLinkedLocally, setEmailLinkedLocally] = useState(false);
+
+  // 永続化されたメール登録フラグを読み込む（_layout.tsxと同じロジック）
+  useEffect(() => {
+    AsyncStorage.getItem(EMAIL_LINKED_KEY).then((val) => {
+      if (val === 'true') setEmailLinkedLocally(true);
+    });
+  }, []);
+
+  // isEmailLinkedがtrueになったら永続化（_layout.tsxと同じロジック）
+  useEffect(() => {
+    if (isEmailLinked) {
+      AsyncStorage.setItem(EMAIL_LINKED_KEY, 'true');
+      setEmailLinkedLocally(true);
+    }
+  }, [isEmailLinked]);
 
   const handleSaveName = async () => {
     if (!teamId || !newName.trim()) return;
@@ -40,6 +58,9 @@ export default function SettingsScreen() {
 
   if (!team) return null;
 
+  // バナー表示判定: _layout.tsx の needsEmailRegistration と同じ条件に揃える
+  const needsEmailRegistration = !isEmailLinked && !emailLinkedLocally;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <EmailLinkModal
@@ -47,7 +68,7 @@ export default function SettingsScreen() {
         onClose={() => setShowEmailLink(false)}
       />
 
-      {!isEmailLinked && (
+      {needsEmailRegistration && (
         <TouchableOpacity style={styles.emailBanner} onPress={() => setShowEmailLink(true)}>
           <Ionicons name="mail-outline" size={20} color="#E65100" />
           <View style={styles.emailBannerText}>

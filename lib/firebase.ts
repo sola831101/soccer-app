@@ -1,6 +1,12 @@
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore';
-import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
+// React Native 環境では @firebase/auth から直接 import する必要がある。
+// firebase/auth の package.json には `react-native` 条件付き export が無いため、
+// Web向けバンドルが読まれてしまい getReactNativePersistence が undefined になる。
+// @firebase/auth には `react-native` 条件があり、Metro が dist/rn を選んで読み込む。
+// 型定義からは getReactNativePersistence が削除されているがランタイムでは存在するため @ts-expect-error で抑制。
+// @ts-expect-error: getReactNativePersistence is available at runtime in RN entry (dist/rn)
+import { initializeAuth, getReactNativePersistence } from '@firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStorage } from 'firebase/storage';
 
