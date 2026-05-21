@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Linking,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,8 +18,30 @@ import { UpgradeModal } from '../../components/UpgradeModal';
 import { PLAN_LIMITS, PLAN_DISPLAY } from '../../lib/plans';
 
 export default function PlanSettingsScreen() {
-  const { team, teamId, user, isPremium, plan, matches, venues, players, memberCount } = useTeam();
+  const {
+    team, teamId, user, isPremium, plan, matches, venues, players, memberCount,
+    syncPurchaseStateManual, syncState,
+  } = useTeam();
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [manualSyncing, setManualSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    if (manualSyncing) return;
+    setManualSyncing(true);
+    try {
+      const result = await syncPurchaseStateManual();
+      if (result.ok) {
+        Alert.alert('同期完了', '購入状態を最新に反映しました。');
+      } else {
+        Alert.alert(
+          '同期に失敗しました',
+          '購入状態を取得できませんでした。ネットワーク接続をご確認の上、再度お試しください。問題が続く場合はサポートまでお問い合わせください。'
+        );
+      }
+    } finally {
+      setManualSyncing(false);
+    }
+  };
 
   if (!team) {
     return (
@@ -100,6 +124,37 @@ export default function PlanSettingsScreen() {
           )}
         </View>
 
+        {/* 購入状態を同期: 「課金したのに反映されない」時の救済導線 */}
+        {isAdmin && (
+          <View style={styles.section}>
+            {syncState === 'error' && (
+              <View style={styles.syncErrorBanner}>
+                <Ionicons name="warning-outline" size={16} color="#C62828" />
+                <Text style={styles.syncErrorText}>
+                  購入状態の同期に失敗しました。下のボタンで再試行できます。
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.syncButton, manualSyncing && styles.syncButtonDisabled]}
+              onPress={handleManualSync}
+              disabled={manualSyncing}
+            >
+              {manualSyncing ? (
+                <ActivityIndicator size="small" color={theme.textSecondary} />
+              ) : (
+                <Ionicons name="refresh-outline" size={16} color={theme.textSecondary} />
+              )}
+              <Text style={styles.syncButtonText}>
+                {manualSyncing ? '同期中…' : '購入状態を同期'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.syncHint}>
+              課金したのにプランが反映されない場合にお試しください。
+            </Text>
+          </View>
+        )}
+
         {__DEV__ && teamId && isAdmin && (
           <View style={styles.debugSection}>
             <Text style={styles.debugTitle}>🛠 DEBUG: プラン切り替え</Text>
@@ -180,6 +235,31 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
   },
   manageSubText: { color: theme.textSecondary, fontSize: fontSize.sm, fontWeight: '600' },
+  syncErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: '#FFEBEE',
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+  },
+  syncErrorText: { flex: 1, color: '#C62828', fontSize: fontSize.xs },
+  syncButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.sm,
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  syncButtonDisabled: { opacity: 0.6 },
+  syncButtonText: { color: theme.textSecondary, fontSize: fontSize.sm, fontWeight: '600' },
+  syncHint: { fontSize: fontSize.xs, color: theme.textSecondary, marginTop: spacing.xs, textAlign: 'center' },
   debugSection: {
     padding: spacing.md,
     backgroundColor: '#FFF3E0',

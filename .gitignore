@@ -57,3 +57,10 @@ GoogleService-Info.plist
 # Firestore backup tooling and exports
 functions/backup-firestore.js
 functions/firestore-backup-*.json
+
+# 運用調査ツール（リポジトリ管理対象外）
+functions/lookup-user.js
+functions/lookup-user-rest.js
+functions/update-team-plan.js
+functions/reconcile-plans.js
+functions/reconcile-*.json

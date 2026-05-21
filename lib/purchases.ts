@@ -88,3 +88,22 @@ export async function getCustomerInfo(): Promise<CustomerInfo | null> {
 export function isPremiumCustomer(customerInfo: CustomerInfo): boolean {
   return customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] != null;
 }
+
+// 3値で課金状態を返す。Firestoreのplan反映判定で誤動作を避けるため厳格に。
+// - active : 現在entitlementが有効（支払い継続中 or 解約後の期間内、grace period含む）
+// - expired: 過去にentitlementを保有したが現在無効（解約後の期限切れ or 支払い失敗）
+// - never  : 一度も購入していない
+//
+// 前提: RevenueCat SDK の customerInfo.entitlements.active には「期限内かつ有効」な
+// entitlement のみが含まれる（grace period も active 扱い）。expires_date を直接見ずに
+// active / all の存在のみで判定する。
+export type PremiumStatus = 'active' | 'expired' | 'never';
+
+export function getPremiumStatus(customerInfo: CustomerInfo): PremiumStatus {
+  const ents = customerInfo?.entitlements;
+  if (!ents) return 'never';
+  if (ents.active?.[PREMIUM_ENTITLEMENT_ID]) return 'active';
+  // RevenueCatの `all` には期限切れentitlementも残る（過去に1度でも有効化されたものすべて）
+  if (ents.all?.[PREMIUM_ENTITLEMENT_ID]) return 'expired';
+  return 'never';
+}
