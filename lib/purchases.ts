@@ -75,6 +75,20 @@ export async function restorePurchases(): Promise<CustomerInfo> {
   return customerInfo;
 }
 
+// 同期処理用のrestorePurchases。失敗時はnullを返す（getCustomerInfo と同じインターフェース）。
+// getCustomerInfo() と違い、Apple Receipt を再検証して RevenueCat 側の appUserID と
+// 紐づけ直すため、UID不一致で entitlement が見えていないケースを救える。
+// iOS では Apple ID 認証プロンプトが出る可能性がある（ユーザーが意図的に押す場合のみ呼ぶ）。
+export async function restorePurchasesSafe(): Promise<CustomerInfo | null> {
+  if (!isConfigured()) return null;
+  try {
+    return await Purchases.restorePurchases();
+  } catch (e) {
+    console.error('[Purchases] restorePurchasesSafe error:', e);
+    return null;
+  }
+}
+
 export async function getCustomerInfo(): Promise<CustomerInfo | null> {
   if (!isConfigured()) return null;
   try {

@@ -37,10 +37,16 @@ const FAMILY_FEATURES = [
 ];
 
 export function UpgradeModal({ visible, onClose, onUpgrade, reason }: UpgradeModalProps) {
-  const { syncPurchaseState } = useTeam();
+  const { syncPurchaseState, team, user } = useTeam();
   const [pkg, setPkg] = useState<PurchasesPackage | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingOfferings, setLoadingOfferings] = useState(true);
+
+  // オーナー判定: メンバーが購入してもFirestoreルールでplan更新が拒否される（permission-denied）。
+  // 課金は成立するのに機能反映されない事故を防ぐため、購入フロー自体をオーナー限定にする。
+  // team/user未ロード時は判定不能なのでローディング表示にする（オーナーに誤って「管理者のみ」を見せない）。
+  const isLoading = !team || !user;
+  const isAdmin = !!(team && user && team.createdBy === user.uid);
 
   useEffect(() => {
     if (!visible) return;
@@ -132,39 +138,61 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason }: UpgradeMod
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.purchaseButton, (loading || loadingOfferings || !pkg) && { opacity: 0.6 }]}
-            onPress={handlePurchase}
-            disabled={loading || loadingOfferings || !pkg}
-          >
-            {loading ? (
-              <ActivityIndicator color={theme.white} />
-            ) : (
-              <>
-                <Ionicons name="star" size={18} color={theme.white} />
-                <Text style={styles.purchaseButtonText}>ファミリープランに変更する</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {isLoading ? (
+            <View style={styles.loadingBlock}>
+              <ActivityIndicator size="small" color={theme.textSecondary} />
+              <Text style={styles.loadingText}>読み込み中…</Text>
+            </View>
+          ) : isAdmin ? (
+            <>
+              <TouchableOpacity
+                style={[styles.purchaseButton, (loading || loadingOfferings || !pkg) && { opacity: 0.6 }]}
+                onPress={handlePurchase}
+                disabled={loading || loadingOfferings || !pkg}
+              >
+                {loading ? (
+                  <ActivityIndicator color={theme.white} />
+                ) : (
+                  <>
+                    <Ionicons name="star" size={18} color={theme.white} />
+                    <Text style={styles.purchaseButtonText}>ファミリープランに変更する</Text>
+                  </>
+                )}
+              </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleRestore} disabled={loading} style={styles.restoreButton}>
-            <Text style={styles.restoreText}>購入を復元する</Text>
-          </TouchableOpacity>
+              <TouchableOpacity onPress={handleRestore} disabled={loading} style={styles.restoreButton}>
+                <Text style={styles.restoreText}>購入を復元する</Text>
+              </TouchableOpacity>
 
-          <Text style={styles.note}>
-            App Storeで購入処理が行われます。いつでもキャンセル可能です。{'\n'}
-            サブスクリプション名：サカログ ファミリープラン（月額）
-          </Text>
+              <Text style={styles.note}>
+                App Storeで購入処理が行われます。いつでもキャンセル可能です。{'\n'}
+                サブスクリプション名：サカログ ファミリープラン（月額）
+              </Text>
 
-          <View style={styles.legalLinks}>
-            <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
-              <Text style={styles.legalLink}>プライバシーポリシー</Text>
-            </TouchableOpacity>
-            <Text style={styles.legalSep}>｜</Text>
-            <TouchableOpacity onPress={() => Linking.openURL(EULA_URL)}>
-              <Text style={styles.legalLink}>利用規約（EULA）</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.legalLinks}>
+                <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+                  <Text style={styles.legalLink}>プライバシーポリシー</Text>
+                </TouchableOpacity>
+                <Text style={styles.legalSep}>｜</Text>
+                <TouchableOpacity onPress={() => Linking.openURL(EULA_URL)}>
+                  <Text style={styles.legalLink}>利用規約（EULA）</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.memberNotice}>
+                <Ionicons name="information-circle-outline" size={20} color="#E65100" />
+                <Text style={styles.memberNoticeText}>
+                  ファミリープランへの加入は、グループの管理者のみ行えます。
+                  管理者の方にご相談ください。プラン加入後は、グループメンバー全員でファミリープランの機能を利用できます。
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.closeAltButton} onPress={onClose}>
+                <Text style={styles.closeAltText}>閉じる</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </ScrollView>
       </View>
     </Modal>
@@ -295,6 +323,51 @@ const styles = StyleSheet.create({
   },
   legalSep: {
     fontSize: fontSize.xs,
+    color: theme.textSecondary,
+  },
+  memberNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: '#FFF3E0',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FFE0B2',
+    width: '100%',
+    marginBottom: spacing.md,
+  },
+  memberNoticeText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: '#E65100',
+    lineHeight: 20,
+  },
+  closeAltButton: {
+    backgroundColor: theme.surface,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  closeAltText: {
+    color: theme.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
+  loadingBlock: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    width: '100%',
+  },
+  loadingText: {
+    fontSize: fontSize.sm,
     color: theme.textSecondary,
   },
 });

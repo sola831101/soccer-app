@@ -5,7 +5,8 @@ import { auth } from '../firebase';
 import { Team, Match, Venue, Player, Plan } from '../types';
 import { subscribeToTeam, subscribeToMatches, subscribeToVenues, subscribeToPlayers, updateTeamPlan } from '../firestore';
 import { PLAN_LIMITS, hasFeature, Plan as PlanType } from '../plans';
-import { configurePurchases, getCustomerInfo, getPremiumStatus } from '../purchases';
+import { configurePurchases, getCustomerInfo, getPremiumStatus, restorePurchasesSafe } from '../purchases';
+import * as Sentry from '@sentry/react-native';
 
 export type SyncState = 'idle' | 'syncing' | 'error';
 
@@ -163,7 +164,12 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   // - customerInfo取得失敗 → 何もしない（既存状態維持、呼び出し元にerror返却）
   // - team未ロード時はアップグレード/ダウングレード共にスキップ（誤動作防止）
   // - オーナー以外はFirestoreルールでplan更新が拒否されるため、リトライ前に黙ってスキップ
-  const syncPurchaseStateCore = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+  //
+  // useRestore=true: getCustomerInfo の代わりに restorePurchasesSafe を使う。
+  //   Apple Receipt を再検証して RC の appUserID と紐付け直すため、UID不一致で
+  //   entitlement が見えていないケースを救える。手動同期ボタンで使う（iOS で
+  //   Apple ID 認証プロンプトが出る可能性があるため、ユーザー意図がある時のみ）。
+  const syncPurchaseStateCore = useCallback(async (useRestore = false): Promise<{ ok: boolean; error?: string }> => {
     if (!teamId) return { ok: false, error: 'no team' };
 
     const currentTeam = teamRef.current;
@@ -175,13 +181,15 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     }
     // オーナー (createdBy) 以外はFirestoreルールで plan 更新が permission-denied になる。
     // 静かにスキップして、無駄なリトライ・ログ汚染・APIコール消費を避ける。
-    // メンバーが自前の課金を持ち込んだケースは現時点では手動サポート対応とする（1.0.12では非対応）。
+    // メンバーが自前の課金を持ち込んだケースは現時点では手動サポート対応とする。
     if (currentUser && currentTeam.createdBy !== currentUser.uid) {
       return { ok: true };
     }
 
     try {
-      const customerInfo = await getCustomerInfo();
+      const customerInfo = useRestore
+        ? await restorePurchasesSafe()
+        : await getCustomerInfo();
       if (!customerInfo) {
         return { ok: false, error: 'customer info unavailable' };
       }
@@ -226,6 +234,11 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       const nextAttempt = attempt + 1;
       if (nextAttempt >= maxAttempts) {
         console.warn('[Purchases] auto-sync failed after retries:', result.error);
+        // 失敗の傾向検知のため Sentry に warning として送る
+        Sentry.captureMessage(
+          `Purchases auto-sync failed after ${maxAttempts} retries: ${result.error}`,
+          'warning'
+        );
         setSyncState('error');
         return;
       }
@@ -242,19 +255,33 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   }, [teamId, uid, purchasesReady, teamLoaded, syncPurchaseStateCore]);
 
   // 手動同期: 設定>プラン画面の「購入状態を同期」ボタンから呼ばれる
+  // restorePurchasesベースで実行（Apple Receiptを再検証してUID不一致を救う）
+  // Sentry通知は送らない（ユーザー意図のリトライ・Apple認証キャンセル等で乱発するため）。
+  // 失敗の傾向は自動syncの3回リトライ失敗（auto-sync側）でキャプチャする方針。
   const syncPurchaseStateManual = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     setSyncState('syncing');
-    const result = await syncPurchaseStateCore();
+    const result = await syncPurchaseStateCore(true);
     setSyncState(result.ok ? 'idle' : 'error');
     return result;
   }, [syncPurchaseStateCore]);
 
   // 互換API: UpgradeModal等の「購入完了直後にfamilyを即時セット」用途
   // 引数あり: その値で強制セット / 引数なし: 自動syncに委譲
+  // 引数あり経路でもオーナーガードを入れる（UI側のisAdmin判定漏れ・raceに対する防御線）
   const syncPurchaseState = useCallback(async (newPlan?: PlanType) => {
     if (!teamId) return;
     try {
       if (newPlan) {
+        const currentTeam = teamRef.current;
+        const currentUser = userRef.current;
+        // Defensive: オーナー以外がここに到達した場合は permission-denied になる前に早期return
+        if (currentTeam && currentUser && currentTeam.createdBy !== currentUser.uid) {
+          Sentry.captureMessage(
+            'syncPurchaseState(newPlan) called by non-owner (UI gate bypassed)',
+            'warning'
+          );
+          return;
+        }
         await updateTeamPlan(teamId, newPlan);
         return;
       }
