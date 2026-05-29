@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: 'サカログ',
     slug: 'soccer-app',
-    version: '1.0.13',
+    version: '1.0.14',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.soccerapp.manager',
-      buildNumber: '29',
+      buildNumber: '30',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSUserTrackingUsageDescription:

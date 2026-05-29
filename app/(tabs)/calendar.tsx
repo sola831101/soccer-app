@@ -25,6 +25,16 @@ function getCurrentYearMonth(): string {
   return `${y}-${m}`;
 }
 
+// 端末のローカルタイムゾーン基準で YYYY-MM-DD を返す。
+// toISOString() はUTC基準のため、JST 09:00 より前の試合が前日扱いになる不具合があった。
+// react-native-calendars の day.dateString もローカル基準なので、これと突き合わせる。
+function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export default function CalendarScreen() {
   const { matches } = useTeam();
   const [selectedDate, setSelectedDate] = useState('');
@@ -39,7 +49,7 @@ export default function CalendarScreen() {
     }> = {};
 
     for (const match of matches) {
-      const dateStr = match.date.toDate().toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(match.date.toDate());
       const dotColor = match.matchType === 'official' ? theme.officialBadge : theme.practiceBadge;
 
       if (!marks[dateStr]) {
@@ -87,7 +97,7 @@ export default function CalendarScreen() {
   const filteredMatches = useMemo(() => {
     if (selectedDate) {
       return matches.filter((m) => {
-        const dateStr = m.date.toDate().toISOString().split('T')[0];
+        const dateStr = toLocalDateStr(m.date.toDate());
         return dateStr === selectedDate;
       });
     }
