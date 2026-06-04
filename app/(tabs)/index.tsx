@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { theme, fontSize, spacing } from '../../constants/theme';
+import { theme, fontSize, spacing, borderRadius } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
 import { MatchCard } from '../../components/MatchCard';
 import { EmptyState } from '../../components/EmptyState';
@@ -16,9 +16,14 @@ import { AdBanner } from '../../components/AdBanner';
 import { PlayerHeroCard } from '../../components/PlayerHeroCard';
 import { subscribeToPlayerSteps } from '../../lib/firestore';
 import { PlayerStep } from '../../lib/types';
+import { shareInvite } from '../../lib/invite';
 
 export default function HomeScreen() {
-  const { teamId, players, matches, upcomingMatches, recentResults, loading } = useTeam();
+  const { teamId, team, user, memberCount, players, matches, upcomingMatches, recentResults, loading } = useTeam();
+
+  // 1人グループの管理者にだけ招待を促す（共有が起きていない＝有料化の前提が崩れている層）
+  const isAdmin = !!user && !!team && user.uid === team.createdBy;
+  const showInviteBanner = isAdmin && memberCount <= 1;
 
   // playerId → 最新ステップ（現在の所属チーム取得用）
   const [stepsMap, setStepsMap] = useState<Record<string, PlayerStep[]>>({});
@@ -56,6 +61,26 @@ export default function HomeScreen() {
             matches={matches}
             currentTeams={currentTeams}
           />
+        )}
+
+        {/* 招待バナー（1人グループの管理者向け） */}
+        {showInviteBanner && team && (
+          <TouchableOpacity
+            style={styles.inviteBanner}
+            onPress={() => shareInvite(team.name, team.shareCode)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.inviteIcon}>
+              <Ionicons name="people" size={22} color={theme.white} />
+            </View>
+            <View style={styles.inviteTextWrap}>
+              <Text style={styles.inviteTitle}>家族・コーチを招待しよう</Text>
+              <Text style={styles.inviteSubtitle}>
+                招待して、試合の記録や写真を一緒に楽しめます
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+          </TouchableOpacity>
         )}
 
         <AdBanner />
@@ -126,6 +151,28 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     marginTop: spacing.md,
   },
+  inviteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: theme.white,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: theme.primary,
+  },
+  inviteIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inviteTextWrap: { flex: 1 },
+  inviteTitle: { fontSize: fontSize.md, fontWeight: '700', color: theme.text },
+  inviteSubtitle: { fontSize: fontSize.xs, color: theme.textSecondary, marginTop: 2, lineHeight: 16 },
   fab: {
     position: 'absolute',
     right: spacing.lg,

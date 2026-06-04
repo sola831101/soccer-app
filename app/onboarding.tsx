@@ -16,6 +16,8 @@ import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
 import { useTeam } from '../lib/context/TeamContext';
 import { createTeam, joinTeam, getUserTeams } from '../lib/firestore';
 import { sendOTP, verifyOTPAndSignIn } from '../lib/auth';
+import { UpgradeModal } from '../components/UpgradeModal';
+import { shareInvite } from '../lib/invite';
 
 type Step = 'email' | 'otp' | 'select' | 'create' | 'join';
 
@@ -27,6 +29,28 @@ export default function OnboardingScreen() {
   const [teamName, setTeamName] = useState('');
   const [shareCode, setShareCode] = useState('');
   const [loading, setLoading] = useState(false);
+  // グループ作成直後に有料版を提案する（スキップ可）。閉じる/購入完了どちらもホームへ。
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const goToHome = () => router.replace('/(tabs)');
+
+  // グループ作成直後：まず招待を最優先で促し、その後に有料版を提案する。
+  const promptInviteThenUpgrade = (createdTeamName: string, code: string) => {
+    Alert.alert(
+      'グループを作成しました！',
+      'さっそく家族やコーチを招待しましょう。みんなで記録を共有すると、もっと楽しく続けられます。',
+      [
+        { text: 'あとで', style: 'cancel', onPress: () => setShowUpgrade(true) },
+        {
+          text: '招待する',
+          onPress: async () => {
+            await shareInvite(createdTeamName, code);
+            setShowUpgrade(true);
+          },
+        },
+      ]
+    );
+  };
 
   const handleSendOTP = async () => {
     const trimmed = email.trim().toLowerCase();
@@ -72,6 +96,14 @@ export default function OnboardingScreen() {
     }
   };
 
+  const showMailHelp = () => {
+    Alert.alert(
+      'メールが届かない場合',
+      '・迷惑メールフォルダをご確認ください\n・メールアドレスに誤りがないかご確認ください（特に @gmail.com などのスペル）\n・数分待っても届かない場合は、前の画面に戻って別のメールアドレスでお試しください',
+      [{ text: '閉じる' }]
+    );
+  };
+
   const handleCreate = async () => {
     if (!teamName.trim()) {
       Alert.alert('入力エラー', 'チーム名を入力してください');
@@ -85,11 +117,8 @@ export default function OnboardingScreen() {
     try {
       const team = await createTeam(teamName.trim(), user.uid);
       await setTeamId(team.id);
-      Alert.alert(
-        'チーム作成完了',
-        `共有コード: ${team.shareCode}\n\n家族にこのコードを共有してください`,
-        [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
-      );
+      // まず招待を最優先で促し、その後に有料版を提案する。
+      promptInviteThenUpgrade(team.name, team.shareCode);
     } catch {
       Alert.alert('エラー', 'チームの作成に失敗しました');
     } finally {
@@ -214,6 +243,9 @@ export default function OnboardingScreen() {
           <TouchableOpacity style={styles.resendButton} onPress={handleSendOTP} disabled={loading}>
             <Text style={styles.resendText}>コードを再送する</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.helpButton} onPress={showMailHelp}>
+            <Text style={styles.helpText}>メールが届かない方はこちら</Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     );
@@ -248,6 +280,12 @@ export default function OnboardingScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={goToHome}
+        onUpgrade={goToHome}
+        socialProof="子どもとサッカーに通えるのは、人生のほんの数年。今この瞬間を、写真と記録でずっと残しませんか。"
+      />
       <TouchableOpacity style={styles.backButton} onPress={() => setStep('select')}>
         <Ionicons name="arrow-back" size={24} color={theme.text} />
       </TouchableOpacity>
@@ -399,6 +437,12 @@ const styles = StyleSheet.create({
   resendText: {
     fontSize: fontSize.sm,
     color: theme.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  helpButton: { alignItems: 'center', marginTop: spacing.sm },
+  helpText: {
+    fontSize: fontSize.sm,
+    color: theme.primary,
     textDecorationLine: 'underline',
   },
   legalNote: {

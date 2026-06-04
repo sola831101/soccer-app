@@ -5,7 +5,7 @@ export const PLAN_LIMITS = {
     matchesPerMonth: 5,
     players: 2,
     venues: 5,
-    members: 5,
+    members: 2,
     dataRetentionMonths: 12,
     showAds: true,
     playerStats: false,

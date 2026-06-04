@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { theme, fontSize, spacing, borderRadius } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
+import { shareInvite } from '../../lib/invite';
 
 export default function MembersSettingsScreen() {
   const { team, user, memberCount, setTeamId } = useTeam();
@@ -66,10 +67,20 @@ export default function MembersSettingsScreen() {
 
         {isAdmin && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>招待コード</Text>
+            <Text style={styles.sectionTitle}>メンバーを招待</Text>
             <Text style={styles.description}>
-              招待コードを共有してメンバーを招待できます。
+              家族やコーチを招待して、一緒に試合を記録しましょう。
             </Text>
+            <TouchableOpacity
+              style={styles.inviteButton}
+              onPress={() => shareInvite(team.name, team.shareCode)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="share-outline" size={20} color={theme.white} />
+              <Text style={styles.inviteButtonText}>招待を送る</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.codeLabel}>招待コード</Text>
             <TouchableOpacity style={styles.codeBox} onPress={handleCopyCode}>
               <Text style={styles.codeText}>{team.shareCode}</Text>
               <View style={styles.copyButton}>
@@ -116,6 +127,23 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
   memberCount: { fontSize: fontSize.md, color: theme.text, fontWeight: '500' },
   description: { fontSize: fontSize.sm, color: theme.textSecondary, marginBottom: spacing.md, lineHeight: 20 },
+  inviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: theme.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  inviteButtonText: { color: theme.white, fontSize: fontSize.md, fontWeight: '700' },
+  codeLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: theme.textSecondary,
+    marginBottom: spacing.sm,
+  },
   codeBox: {
     backgroundColor: theme.surface,
     borderRadius: borderRadius.sm,

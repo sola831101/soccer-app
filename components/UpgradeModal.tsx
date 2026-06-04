@@ -24,19 +24,23 @@ interface UpgradeModalProps {
   onClose: () => void;
   onUpgrade?: () => void;
   reason?: string;
+  // 社会的証明（例「これまでに○件の試合が記録されています」）。事実ベースの値のみ渡すこと。
+  socialProof?: string;
 }
 
-const FAMILY_FEATURES = [
-  { icon: 'infinite-outline',      text: '試合記録：無制限' },
-  { icon: 'people-outline',        text: 'メンバー招待：10人まで' },
-  { icon: 'person-outline',        text: '選手登録：20人まで' },
-  { icon: 'ban-outline',           text: '広告なし・快適に使える' },
-  { icon: 'images-outline',        text: '子どもの顔写真を登録' },
-  { icon: 'football-outline',      text: '所属チーム履歴を記録' },
-  { icon: 'ribbon-outline',        text: 'トレセン歴を記録' },
+// 無料 vs ファミリーの比較。値は lib/plans.ts の PLAN_LIMITS と一致させること。
+const COMPARE_ROWS: { label: string; free: string; family: string; highlight?: boolean }[] = [
+  { label: '試合の記録',     free: '月5件',   family: '無制限', highlight: true },
+  { label: '広告',           free: 'あり',    family: 'なし',   highlight: true },
+  { label: '子どもの顔写真', free: '×',       family: '○',      highlight: true },
+  { label: '所属チーム履歴', free: '×',       family: '○' },
+  { label: 'トレセン歴',     free: '×',       family: '○' },
+  { label: 'メンバー招待',   free: '2人',     family: '10人' },
+  { label: '選手登録',       free: '2人',     family: '20人' },
+  { label: 'データ保持',     free: '12ヶ月',  family: 'ずっと' },
 ];
 
-export function UpgradeModal({ visible, onClose, onUpgrade, reason }: UpgradeModalProps) {
+export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof }: UpgradeModalProps) {
   const { syncPurchaseState, team, user } = useTeam();
   const [pkg, setPkg] = useState<PurchasesPackage | null>(null);
   const [loading, setLoading] = useState(false);
@@ -114,8 +118,16 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason }: UpgradeMod
         <ScrollView contentContainerStyle={styles.content}>
           <Ionicons name="star" size={40} color="#4CAF50" style={styles.icon} />
           <Text style={styles.title}>ファミリープラン</Text>
+
+          {!!socialProof && (
+            <View style={styles.emotionCard}>
+              <Ionicons name="hourglass-outline" size={22} color="#F9A825" />
+              <Text style={styles.emotionText}>{socialProof}</Text>
+            </View>
+          )}
+
           <Text style={styles.price}>¥300 / 月</Text>
-          <Text style={styles.tagline}>家族でお子さんの成長を記録</Text>
+          <Text style={styles.valueNote}>1日あたり約10円。広告なしで、子どもの成長をずっと残せます。</Text>
 
           {reason && (
             <View style={styles.reasonBox}>
@@ -123,19 +135,30 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason }: UpgradeMod
             </View>
           )}
 
-          <View style={styles.featureCard}>
-            {FAMILY_FEATURES.map((f) => (
-              <View key={f.text} style={styles.featureRow}>
-                <Ionicons name={f.icon as any} size={18} color="#4CAF50" />
-                <Text style={styles.featureText}>{f.text}</Text>
+          <View style={styles.compareCard}>
+            <View style={styles.compareHeadRow}>
+              <Text style={[styles.compareCell, styles.compareLabelCell]} />
+              <Text style={[styles.compareCell, styles.compareValCell, styles.compareHeadFree]}>無料</Text>
+              <View style={[styles.compareCell, styles.compareValCell, styles.compareFamilyHead]}>
+                <Text style={styles.compareHeadFamilyText}>ファミリー</Text>
+              </View>
+            </View>
+            {COMPARE_ROWS.map((r) => (
+              <View key={r.label} style={styles.compareRow}>
+                <Text style={[styles.compareCell, styles.compareLabelCell]}>{r.label}</Text>
+                <Text style={[styles.compareCell, styles.compareValCell, styles.compareFreeText]}>{r.free}</Text>
+                <Text
+                  style={[
+                    styles.compareCell,
+                    styles.compareValCell,
+                    styles.compareFamilyText,
+                    r.highlight && styles.compareFamilyStrong,
+                  ]}
+                >
+                  {r.family}
+                </Text>
               </View>
             ))}
-          </View>
-
-          <View style={styles.freeCompare}>
-            <Text style={styles.freeCompareText}>
-              フリープランは月5件・広告あり・子ども情報管理なし・データ12ヶ月保持
-            </Text>
           </View>
 
           {isLoading ? (
@@ -223,11 +246,33 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     marginBottom: 4,
   },
-  tagline: {
+  valueNote: {
     fontSize: fontSize.sm,
-    color: theme.textSecondary,
+    color: theme.text,
     marginBottom: spacing.md,
     textAlign: 'center',
+    lineHeight: 20,
+  },
+  emotionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#FFF8E1',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    width: '100%',
+  },
+  emotionText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: '#5D4037',
+    fontWeight: '700',
+    lineHeight: 21,
   },
   reasonBox: {
     width: '100%',
@@ -244,39 +289,69 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  featureCard: {
+  compareCard: {
     width: '100%',
-    backgroundColor: '#F1F8E9',
+    backgroundColor: theme.white,
     borderRadius: borderRadius.md,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    padding: spacing.md,
-    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.border,
+    overflow: 'hidden',
     marginBottom: spacing.md,
   },
-  featureRow: {
+  compareHeadRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: theme.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  compareRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
-  featureText: {
+  compareCell: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  compareLabelCell: {
+    flex: 1.4,
     fontSize: fontSize.sm,
     color: theme.text,
+    paddingLeft: spacing.md,
+  },
+  compareValCell: {
     flex: 1,
-    lineHeight: 20,
-  },
-  freeCompare: {
-    width: '100%',
-    backgroundColor: theme.surface,
-    borderRadius: borderRadius.sm,
-    padding: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  freeCompareText: {
-    fontSize: fontSize.xs,
-    color: theme.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
+    fontSize: fontSize.sm,
+  },
+  compareHeadFree: {
+    color: theme.textSecondary,
+    fontWeight: '700',
+    textAlignVertical: 'center',
+  },
+  compareFamilyHead: {
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compareHeadFamilyText: {
+    color: theme.white,
+    fontWeight: '800',
+    fontSize: fontSize.sm,
+  },
+  compareFreeText: {
+    color: theme.textSecondary,
+  },
+  compareFamilyText: {
+    color: theme.text,
+    fontWeight: '700',
+    backgroundColor: '#F1F8E9',
+  },
+  compareFamilyStrong: {
+    color: '#2E7D32',
+    fontWeight: '800',
   },
   purchaseButton: {
     backgroundColor: '#4CAF50',

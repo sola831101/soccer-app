@@ -57,6 +57,14 @@ export function EmailLinkModal({ visible, onClose, onSuccess, forced = false, te
     }
   };
 
+  const showMailHelp = () => {
+    Alert.alert(
+      'メールが届かない場合',
+      '・迷惑メールフォルダをご確認ください\n・メールアドレスに誤りがないかご確認ください（特に @gmail.com などのスペル）\n・数分待っても届かない場合は、前の画面に戻って別のメールアドレスでお試しください',
+      [{ text: '閉じる' }]
+    );
+  };
+
   const handleVerify = async () => {
     if (otpCode.length !== 6) {
       Alert.alert('入力エラー', '6桁のコードを入力してください');
@@ -168,6 +176,9 @@ export function EmailLinkModal({ visible, onClose, onSuccess, forced = false, te
               <TouchableOpacity style={styles.resendButton} onPress={handleSendOTP} disabled={loading}>
                 <Text style={styles.resendText}>コードを再送する</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.helpButton} onPress={showMailHelp}>
+                <Text style={styles.helpText}>メールが届かない方はこちら</Text>
+              </TouchableOpacity>
             </>
           )}
         </View>
@@ -232,6 +243,12 @@ const styles = StyleSheet.create({
   resendText: {
     fontSize: fontSize.sm,
     color: theme.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  helpButton: { alignItems: 'center', marginTop: spacing.sm },
+  helpText: {
+    fontSize: fontSize.sm,
+    color: theme.primary,
     textDecorationLine: 'underline',
   },
 });
