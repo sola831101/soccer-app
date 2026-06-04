@@ -31,6 +31,7 @@ interface UpgradeModalProps {
 // 無料 vs ファミリーの比較。値は lib/plans.ts の PLAN_LIMITS と一致させること。
 const COMPARE_ROWS: { label: string; free: string; family: string; highlight?: boolean }[] = [
   { label: '試合の記録',     free: '月5件',   family: '無制限', highlight: true },
+  { label: '試合の写真',     free: '1枚/試合', family: '20枚/試合', highlight: true },
   { label: '広告',           free: 'あり',    family: 'なし',   highlight: true },
   { label: '子どもの顔写真', free: '×',       family: '○',      highlight: true },
   { label: '所属チーム履歴', free: '×',       family: '○' },

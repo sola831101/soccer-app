@@ -5,6 +5,7 @@ export const PLAN_LIMITS = {
     matchesPerMonth: 5,
     players: 2,
     venues: 5,
+    matchPhotos: 1,        // 1試合あたりの写真枚数
     members: 2,
     dataRetentionMonths: 12,
     showAds: true,
@@ -18,6 +19,7 @@ export const PLAN_LIMITS = {
     matchesPerMonth: Infinity,
     players: 20,
     venues: Infinity,
+    matchPhotos: 20,       // 1試合あたりの写真枚数
     members: 10,
     dataRetentionMonths: Infinity,
     showAds: false,

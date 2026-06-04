@@ -12,6 +12,7 @@ import {
   getDocs,
   getDoc,
   arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Match, MatchFormData, Team, Venue, Player, PlayerPosition, Plan, PlayerStep, ToreisenRecord, ToreisenLevel } from './types';
@@ -168,6 +169,20 @@ export async function updateMatch(teamId: string, matchId: string, data: MatchFo
 
 export async function deleteMatch(teamId: string, matchId: string): Promise<void> {
   await deleteDoc(doc(db, 'teams', teamId, 'matches', matchId));
+}
+
+export async function addMatchPhoto(teamId: string, matchId: string, url: string): Promise<void> {
+  await updateDoc(doc(db, 'teams', teamId, 'matches', matchId), {
+    photos: arrayUnion(url),
+    updatedAt: Timestamp.now(),
+  });
+}
+
+export async function removeMatchPhoto(teamId: string, matchId: string, url: string): Promise<void> {
+  await updateDoc(doc(db, 'teams', teamId, 'matches', matchId), {
+    photos: arrayRemove(url),
+    updatedAt: Timestamp.now(),
+  });
 }
 
 export function subscribeToMatches(

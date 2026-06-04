@@ -31,6 +31,7 @@ export interface Match {
   youtubeUrl?: string;
   status: MatchStatus;
   playerIds?: string[];  // 出場予定・出場した選手
+  photos?: string[];     // 試合の写真（Storage URL配列）
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

@@ -24,3 +24,16 @@ export async function deletePlayerPhoto(teamId: string, playerId: string): Promi
 export async function uploadTeamStepIcon(teamId: string, playerId: string, stepId: string, uri: string): Promise<string> {
   return uploadImage(`teamStepIcons/${teamId}/${playerId}/${stepId}.jpg`, uri);
 }
+
+// 試合の写真
+export async function uploadMatchPhoto(teamId: string, matchId: string, uri: string): Promise<string> {
+  const photoId = `${Date.now()}`;
+  return uploadImage(`matchPhotos/${teamId}/${matchId}/${photoId}.jpg`, uri);
+}
+
+// download URL から直接削除（ref() はhttps/gs URLを受け付ける）
+export async function deleteMatchPhotoByUrl(url: string): Promise<void> {
+  try {
+    await deleteObject(ref(storage, url));
+  } catch { /* 既に無い場合は無視 */ }
+}

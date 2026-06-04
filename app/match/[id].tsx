@@ -7,18 +7,26 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, fontSize, spacing, borderRadius } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
 import { Match, MatchFormData } from '../../lib/types';
-import { updateMatch, deleteMatch } from '../../lib/firestore';
+import { updateMatch, deleteMatch, addMatchPhoto, removeMatchPhoto } from '../../lib/firestore';
+import { uploadMatchPhoto, deleteMatchPhotoByUrl } from '../../lib/storage';
+import { PLAN_LIMITS } from '../../lib/plans';
 import { MatchTypeBadge } from '../../components/MatchTypeBadge';
 import { ScoreDisplay } from '../../components/ScoreDisplay';
 import { YouTubePlayer } from '../../components/YouTubePlayer';
 import { MatchForm } from '../../components/MatchForm';
 import { AdBanner } from '../../components/AdBanner';
+import { UpgradeModal } from '../../components/UpgradeModal';
+import { PhotoViewer } from '../../components/PhotoViewer';
+
+let ImagePicker: typeof import('expo-image-picker') | null = null;
+try { ImagePicker = require('expo-image-picker'); } catch { ImagePicker = null; }
 
 function formatFullDate(date: Date): string {
   const days = ['日', '月', '火', '水', '木', '金', '土'];
@@ -33,9 +41,12 @@ function formatFullDate(date: Date): string {
 
 export default function MatchDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { matches, teamId, players } = useTeam();
+  const { matches, teamId, players, isPremium } = useTeam();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const match = matches.find((m) => m.id === id);
 
@@ -68,6 +79,56 @@ export default function MatchDetailScreen() {
     } catch {
       Alert.alert('エラー', '削除に失敗しました');
     }
+  };
+
+  const photos = match.photos ?? [];
+  const photoLimit = isPremium ? PLAN_LIMITS.family.matchPhotos : PLAN_LIMITS.free.matchPhotos;
+
+  const handleAddPhoto = async () => {
+    if (!ImagePicker) return;
+    if (photos.length >= photoLimit) {
+      if (!isPremium) setShowUpgrade(true);
+      else Alert.alert('写真の上限', `1試合あたり${photoLimit}枚まで登録できます`);
+      return;
+    }
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('権限が必要です', '写真へのアクセスを許可してください');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.6,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadMatchPhoto(teamId, match.id, result.assets[0].uri);
+      await addMatchPhoto(teamId, match.id, url);
+    } catch {
+      Alert.alert('エラー', '写真のアップロードに失敗しました');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleDeletePhoto = (url: string) => {
+    Alert.alert('写真を削除', 'この写真を削除しますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await removeMatchPhoto(teamId, match.id, url);
+            await deleteMatchPhotoByUrl(url);
+            setViewerIndex(null);
+          } catch {
+            Alert.alert('エラー', '削除に失敗しました');
+          }
+        },
+      },
+    ]);
   };
 
   if (editing) {
@@ -198,6 +259,44 @@ export default function MatchDetailScreen() {
           </View>
         )}
 
+        {/* 試合の写真 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>試合の写真</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.photoRow}
+          >
+            {photos.map((url, i) => (
+              <TouchableOpacity key={url} onPress={() => setViewerIndex(i)} activeOpacity={0.85}>
+                <Image source={{ uri: url }} style={styles.photoThumb} />
+              </TouchableOpacity>
+            ))}
+            {photos.length < photoLimit ? (
+              <TouchableOpacity style={styles.photoAdd} onPress={handleAddPhoto} disabled={uploadingPhoto}>
+                {uploadingPhoto ? (
+                  <ActivityIndicator color={theme.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="camera-outline" size={26} color={theme.primary} />
+                    <Text style={styles.photoAddText}>追加</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : !isPremium ? (
+              <TouchableOpacity style={styles.photoLocked} onPress={() => setShowUpgrade(true)}>
+                <Ionicons name="lock-closed" size={22} color={theme.textSecondary} />
+                <Text style={styles.photoLockedText}>もっと残す</Text>
+              </TouchableOpacity>
+            ) : null}
+          </ScrollView>
+          <Text style={styles.photoHint}>
+            {isPremium
+              ? `${photos.length}/${photoLimit}枚`
+              : `無料は1試合${photoLimit}枚まで・ファミリーなら20枚まで残せます`}
+          </Text>
+        </View>
+
         {/* メモ */}
         {match.notes && (
           <View style={styles.section}>
@@ -217,6 +316,21 @@ export default function MatchDetailScreen() {
           <Text style={styles.homeButtonText}>ホームに戻る</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgrade={() => setShowUpgrade(false)}
+        reason="試合の写真をもっと残すには、ファミリープランがおすすめです"
+      />
+
+      <PhotoViewer
+        visible={viewerIndex !== null}
+        photos={photos}
+        initialIndex={viewerIndex ?? 0}
+        onClose={() => setViewerIndex(null)}
+        onDelete={handleDeletePhoto}
+      />
     </>
   );
 }
@@ -339,5 +453,54 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '600',
     color: theme.text,
+  },
+  photoRow: {
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  photoThumb: {
+    width: 96,
+    height: 96,
+    borderRadius: borderRadius.md,
+    backgroundColor: theme.surface,
+  },
+  photoAdd: {
+    width: 96,
+    height: 96,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.white,
+    gap: 2,
+  },
+  photoAddText: {
+    fontSize: fontSize.xs,
+    color: theme.primary,
+    fontWeight: '600',
+  },
+  photoLocked: {
+    width: 96,
+    height: 96,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.surface,
+    gap: 2,
+  },
+  photoLockedText: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    fontWeight: '600',
+  },
+  photoHint: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    marginTop: spacing.xs,
   },
 });
