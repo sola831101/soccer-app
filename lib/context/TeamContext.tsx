@@ -131,7 +131,17 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const unsubTeam = subscribeToTeam(teamId, setTeam);
+    const unsubTeam = subscribeToTeam(teamId, (t) => {
+      if (t === null) {
+        // teamドキュメントが存在しない（削除された / 参加解除された）。
+        // これがないと、削除済みチームをローカルteamIdが指したまま onboarding に戻らず空画面になる。
+        // ローカル選択をクリアして (tabs)/_layout の !teamId 判定で onboarding へ誘導する。
+        setTeam(null);
+        setTeamId(null);
+        return;
+      }
+      setTeam(t);
+    });
     const unsubMatches = subscribeToMatches(teamId, setAllMatches);
     const unsubVenues = subscribeToVenues(teamId, setVenues);
     const unsubPlayers = subscribeToPlayers(teamId, setPlayers);
