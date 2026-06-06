@@ -117,9 +117,7 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          <Ionicons name="star" size={40} color="#4CAF50" style={styles.icon} />
-          <Text style={styles.title}>ファミリープラン</Text>
-
+          {/* 1. 砂時計アラート（最初に：感情・社会的証明） */}
           {!!socialProof && (
             <View style={styles.emotionCard}>
               <Ionicons name="hourglass-outline" size={22} color="#F9A825" />
@@ -127,14 +125,18 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
             </View>
           )}
 
-          <Text style={styles.price}>¥300 / 月</Text>
-          <Text style={styles.valueNote}>1日あたり約10円。広告なしで、子どもの成長をずっと残せます。</Text>
-
+          {/* 2. 無料プランの限界＋有料でできること（背景色付き説明） */}
           {reason && (
             <View style={styles.reasonBox}>
               <Text style={styles.reasonText}>{reason}</Text>
             </View>
           )}
+
+          {/* 3. 訴求：星マーク＋ファミリープラン */}
+          <Ionicons name="star" size={40} color="#4CAF50" style={styles.icon} />
+          <Text style={styles.title}>ファミリープラン</Text>
+          <Text style={styles.price}>¥300 / 月</Text>
+          <Text style={styles.valueNote}>1日あたり約10円。広告なしで、子どもの成長をずっと残せます。</Text>
 
           <View style={styles.compareCard}>
             <View style={styles.compareHeadRow}>
@@ -169,21 +171,6 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
             </View>
           ) : isAdmin ? (
             <>
-              <TouchableOpacity
-                style={[styles.purchaseButton, (loading || loadingOfferings || !pkg) && { opacity: 0.6 }]}
-                onPress={handlePurchase}
-                disabled={loading || loadingOfferings || !pkg}
-              >
-                {loading ? (
-                  <ActivityIndicator color={theme.white} />
-                ) : (
-                  <>
-                    <Ionicons name="star" size={18} color={theme.white} />
-                    <Text style={styles.purchaseButtonText}>ファミリープランに変更する</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
               <TouchableOpacity onPress={handleRestore} disabled={loading} style={styles.restoreButton}>
                 <Text style={styles.restoreText}>購入を復元する</Text>
               </TouchableOpacity>
@@ -204,20 +191,41 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
               </View>
             </>
           ) : (
-            <>
-              <View style={styles.memberNotice}>
-                <Ionicons name="information-circle-outline" size={20} color="#E65100" />
-                <Text style={styles.memberNoticeText}>
-                  ファミリープランへの加入は、グループの管理者のみ行えます。
-                  管理者の方にご相談ください。プラン加入後は、グループメンバー全員でファミリープランの機能を利用できます。
-                </Text>
-              </View>
+            <View style={styles.memberNotice}>
+              <Ionicons name="information-circle-outline" size={20} color="#E65100" />
+              <Text style={styles.memberNoticeText}>
+                ファミリープランへの加入は、グループの管理者のみ行えます。
+                管理者の方にご相談ください。プラン加入後は、グループメンバー全員でファミリープランの機能を利用できます。
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* CTAは画面下部に固定（スクロールしても常に表示） */}
+        {!isLoading && (
+          <View style={styles.footer}>
+            {isAdmin ? (
+              <TouchableOpacity
+                style={[styles.purchaseButton, styles.footerButton, (loading || loadingOfferings || !pkg) && { opacity: 0.6 }]}
+                onPress={handlePurchase}
+                disabled={loading || loadingOfferings || !pkg}
+              >
+                {loading ? (
+                  <ActivityIndicator color={theme.white} />
+                ) : (
+                  <>
+                    <Ionicons name="star" size={18} color={theme.white} />
+                    <Text style={styles.purchaseButtonText}>ファミリープランに変更する</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : (
               <TouchableOpacity style={styles.closeAltButton} onPress={onClose}>
                 <Text style={styles.closeAltText}>閉じる</Text>
               </TouchableOpacity>
-            </>
-          )}
-        </ScrollView>
+            )}
+          </View>
+        )}
       </View>
     </Modal>
   );
@@ -353,6 +361,17 @@ const styles = StyleSheet.create({
   compareFamilyStrong: {
     color: '#2E7D32',
     fontWeight: '800',
+  },
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
+    backgroundColor: theme.background,
+  },
+  footerButton: {
+    marginBottom: 0,
   },
   purchaseButton: {
     backgroundColor: '#4CAF50',

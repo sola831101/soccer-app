@@ -19,9 +19,14 @@ import { subscribeToPlayerSteps } from '../../lib/firestore';
 import { PlayerStep } from '../../lib/types';
 import { shareInvite } from '../../lib/invite';
 
+// ホームの「最近の結果」はこの件数まで。超えたら「すべての試合を見る」を出す
+const RECENT_HOME_LIMIT = 3;
+
 export default function HomeScreen() {
-  const { teamId, team, user, memberCount, players, matches, upcomingMatches, recentResults, loading, isPremium, hiddenMatchCount } = useTeam();
+  const { teamId, team, user, memberCount, players, matches, upcomingMatches, recentResults, loading, isPremium, hiddenMatchCount, soonHiddenMatches } = useTeam();
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState<string | undefined>(undefined);
+  const openUpgrade = (reason?: string) => { setUpgradeReason(reason); setShowUpgrade(true); };
 
   // 1人グループの管理者にだけ招待を促す（共有が起きていない＝有料化の前提が崩れている層）
   const isAdmin = !!user && !!team && user.uid === team.createdBy;
@@ -85,11 +90,41 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
+        {/* 手前アラート：もうすぐ非表示になる試合（無料・30日以内） */}
+        {!isPremium && soonHiddenMatches && (
+          <TouchableOpacity
+            style={styles.warnBanner}
+            onPress={() =>
+              openUpgrade(
+                `あと${soonHiddenMatches.daysLeft}日で${soonHiddenMatches.count}件の試合記録が非表示になります。ファミリープランなら、ずっと見返せます。`
+              )
+            }
+            activeOpacity={0.85}
+          >
+            <View style={styles.warnIcon}>
+              <Ionicons name="alert" size={22} color={theme.white} />
+            </View>
+            <View style={styles.inviteTextWrap}>
+              <Text style={styles.inviteTitle}>
+                あと{soonHiddenMatches.daysLeft}日で{soonHiddenMatches.count}件が見れなくなります
+              </Text>
+              <Text style={styles.inviteSubtitle}>
+                無料プランは記録を12ヶ月保持。ファミリープランなら、ずっと見返せます
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+          </TouchableOpacity>
+        )}
+
         {/* 隠れ記録の復活訴求（無料・12ヶ月より前の記録がある場合のみ） */}
         {!isPremium && hiddenMatchCount > 0 && (
           <TouchableOpacity
             style={styles.retentionBanner}
-            onPress={() => setShowUpgrade(true)}
+            onPress={() =>
+              openUpgrade(
+                `12ヶ月より前の記録が${hiddenMatchCount}件あります。ファミリープランなら、いつでも見返せます。`
+              )
+            }
             activeOpacity={0.85}
           >
             <View style={styles.retentionIcon}>
@@ -132,7 +167,7 @@ export default function HomeScreen() {
         {recentResults.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>最近の結果</Text>
-            {recentResults.map((match) => (
+            {recentResults.slice(0, RECENT_HOME_LIMIT).map((match) => (
               <MatchCard
                 key={match.id}
                 match={match}
@@ -140,6 +175,16 @@ export default function HomeScreen() {
                 onPress={() => router.push(`/match/${match.id}`)}
               />
             ))}
+            {recentResults.length > RECENT_HOME_LIMIT && (
+              <TouchableOpacity
+                style={styles.moreButton}
+                onPress={() => router.push('/calendar')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.moreButtonText}>すべての試合を見る</Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.primary} />
+              </TouchableOpacity>
+            )}
             <AdBanner />
           </>
         )}
@@ -149,7 +194,7 @@ export default function HomeScreen() {
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
         onUpgrade={() => setShowUpgrade(false)}
-        reason={`12ヶ月より前の記録が${hiddenMatchCount}件あります。ファミリープランなら、いつでも見返せます。`}
+        reason={upgradeReason}
       />
 
       {/* FAB */}
@@ -179,6 +224,19 @@ const styles = StyleSheet.create({
     color: theme.text,
     marginBottom: spacing.sm,
     marginTop: spacing.md,
+  },
+  moreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  moreButtonText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: theme.primary,
   },
   inviteBanner: {
     flexDirection: 'row',
@@ -218,6 +276,25 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#F9A825',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  warnBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: '#FFF5F5',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E53935',
+  },
+  warnIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E53935',
     justifyContent: 'center',
     alignItems: 'center',
   },

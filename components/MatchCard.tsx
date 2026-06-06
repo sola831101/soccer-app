@@ -10,6 +10,8 @@ interface Props {
   match: Match;
   onPress: () => void;
   players?: Player[];
+  // 'datetime'（既定）= 6/7(土) 14:00 / 'time' = 14:00 のみ（左に日付レールを置くカレンダー用）
+  dateFormat?: 'datetime' | 'time';
 }
 
 function formatDate(date: Date): string {
@@ -22,7 +24,13 @@ function formatDate(date: Date): string {
   return `${m}/${d}(${day}) ${h}:${min}`;
 }
 
-export function MatchCard({ match, onPress, players = [] }: Props) {
+function formatTime(date: Date): string {
+  const h = date.getHours().toString().padStart(2, '0');
+  const min = date.getMinutes().toString().padStart(2, '0');
+  return `${h}:${min}`;
+}
+
+export function MatchCard({ match, onPress, players = [], dateFormat = 'datetime' }: Props) {
   const date = match.date.toDate();
   const hasScore = match.scoreHome != null && match.scoreAway != null;
   const now = new Date();
@@ -48,7 +56,7 @@ export function MatchCard({ match, onPress, players = [] }: Props) {
             </View>
           )}
         </View>
-        <Text style={styles.date}>{formatDate(date)}</Text>
+        <Text style={styles.date}>{dateFormat === 'time' ? formatTime(date) : formatDate(date)}</Text>
       </View>
 
       <View style={styles.body}>

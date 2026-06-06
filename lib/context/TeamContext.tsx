@@ -26,6 +26,8 @@ interface TeamContextType {
   hiddenMatchCount: number;
   // 保持フィルタ前の全試合数（socialProof表示用）
   totalMatchCount: number;
+  // 保持期限(12ヶ月)が近い試合の手前アラート用（無料のみ）。対象なしはnull。
+  soonHiddenMatches: { count: number; daysLeft: number } | null;
   plan: Plan;
   isPremium: boolean;
   memberCount: number;
@@ -51,6 +53,7 @@ const TeamContext = createContext<TeamContextType>({
   recentResults: [],
   hiddenMatchCount: 0,
   totalMatchCount: 0,
+  soonHiddenMatches: null,
   plan: 'free',
   isPremium: false,
   memberCount: 0,
@@ -320,6 +323,26 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   const totalMatchCount = allMatches.length;
   const hiddenMatchCount = isPremium ? 0 : allMatches.length - matches.length;
 
+  // 保持期限(12ヶ月)が近い試合の手前アラート（無料のみ・30日以内に非表示になるもの）
+  const soonHiddenMatches = useMemo(() => {
+    if (isPremium) return null;
+    const WARN_DAYS = 30;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    let count = 0;
+    let minDaysLeft = Infinity;
+    for (const m of allMatches) {
+      const hideAt = m.date.toDate();
+      hideAt.setMonth(hideAt.getMonth() + 12);
+      const daysLeft = Math.ceil((hideAt.getTime() - now) / dayMs);
+      if (daysLeft > 0 && daysLeft <= WARN_DAYS) {
+        count++;
+        if (daysLeft < minDaysLeft) minDaysLeft = daysLeft;
+      }
+    }
+    return count > 0 ? { count, daysLeft: minDaysLeft } : null;
+  }, [allMatches, isPremium]);
+
   const upcomingMatches = useMemo(() => {
     return matches
       .filter((m) => m.scoreHome == null || m.scoreAway == null)
@@ -355,6 +378,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         recentResults,
         hiddenMatchCount,
         totalMatchCount,
+        soonHiddenMatches,
         plan,
         isPremium,
         memberCount,
