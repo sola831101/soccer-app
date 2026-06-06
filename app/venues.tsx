@@ -172,7 +172,7 @@ export default function VenuesScreen() {
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
         onUpgrade={() => setShowUpgrade(false)}
-        reason={`無料プランは会場を${PLAN_LIMITS.free.venues}件まで登録できます。プレミアムにアップグレードすると無制限に登録できます。`}
+        reason={`無料プランは会場を${PLAN_LIMITS.free.venues}件まで登録できます。ファミリープランにすると無制限に登録できます。`}
       />
       <FlatList
         data={venues}

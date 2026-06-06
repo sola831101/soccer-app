@@ -22,6 +22,10 @@ interface TeamContextType {
   setTeamId: (id: string | null) => void;
   upcomingMatches: Match[];
   recentResults: Match[];
+  // データ保持(無料は12ヶ月)で非表示になっている試合数。有料訴求バナー用。有料は常に0。
+  hiddenMatchCount: number;
+  // 保持フィルタ前の全試合数（socialProof表示用）
+  totalMatchCount: number;
   plan: Plan;
   isPremium: boolean;
   memberCount: number;
@@ -45,6 +49,8 @@ const TeamContext = createContext<TeamContextType>({
   setTeamId: () => {},
   upcomingMatches: [],
   recentResults: [],
+  hiddenMatchCount: 0,
+  totalMatchCount: 0,
   plan: 'free',
   isPremium: false,
   memberCount: 0,
@@ -310,6 +316,10 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     return allMatches.filter((m) => m.date.toDate() >= cutoff);
   }, [allMatches, isPremium]);
 
+  // 保持フィルタで非表示になった件数（有料訴求バナー用）。有料は常に0。
+  const totalMatchCount = allMatches.length;
+  const hiddenMatchCount = isPremium ? 0 : allMatches.length - matches.length;
+
   const upcomingMatches = useMemo(() => {
     return matches
       .filter((m) => m.scoreHome == null || m.scoreAway == null)
@@ -343,6 +353,8 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
         setTeamId,
         upcomingMatches,
         recentResults,
+        hiddenMatchCount,
+        totalMatchCount,
         plan,
         isPremium,
         memberCount,

@@ -11,7 +11,7 @@ import { PLAN_LIMITS } from '../../lib/plans';
 import { maybeRequestReview } from '../../lib/review';
 
 export default function NewMatchScreen() {
-  const { teamId, matches, plan } = useTeam();
+  const { teamId, matches, plan, totalMatchCount } = useTeam();
   const [saving, setSaving] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
@@ -62,7 +62,8 @@ export default function NewMatchScreen() {
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
         onUpgrade={() => setShowUpgrade(false)}
-        reason={`無料プランは月${PLAN_LIMITS.free.matchesPerMonth}件まで試合を登録できます。プランをアップグレードすると無制限に登録できます。`}
+        reason={`無料プランは月${PLAN_LIMITS.free.matchesPerMonth}件まで試合を登録できます。ファミリープランにすると無制限に登録できます。`}
+        socialProof={totalMatchCount > 0 ? `これまで${totalMatchCount}件の試合を記録してきました。` : undefined}
       />
     </>
   );

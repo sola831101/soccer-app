@@ -176,7 +176,8 @@ export default function PlayersScreen() {
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
         onUpgrade={() => setShowUpgrade(false)}
-        reason={`無料プランは選手を${PLAN_LIMITS.free.players}人まで登録できます。プレミアムは30人まで対応しています。`}
+        reason={`無料プランは選手を${PLAN_LIMITS.free.players}人まで登録できます。ファミリープランなら${PLAN_LIMITS.family.players}人まで登録できます。`}
+        socialProof={players.length > 0 ? `これまで${players.length}人の選手を登録しています。` : undefined}
       />
       <FlatList
         data={players}
