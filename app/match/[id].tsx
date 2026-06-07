@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,14 +13,15 @@ import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, fontSize, spacing, borderRadius } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
-import { Match, MatchFormData } from '../../lib/types';
-import { updateMatch, deleteMatch, addMatchPhoto, removeMatchPhoto } from '../../lib/firestore';
+import { Match, MatchFormData, PlayInterval } from '../../lib/types';
+import { updateMatch, deleteMatch, addMatchPhoto, removeMatchPhoto, updateMatchPlayerStats } from '../../lib/firestore';
+import { intervalMinutes, DEFAULT_HALF_MINUTES } from '../../lib/stats';
 import { uploadMatchPhoto, deleteMatchPhotoByUrl } from '../../lib/storage';
 import { PLAN_LIMITS } from '../../lib/plans';
 import { MatchTypeBadge } from '../../components/MatchTypeBadge';
 import { ScoreDisplay } from '../../components/ScoreDisplay';
 import { YouTubePlayer } from '../../components/YouTubePlayer';
-import { MatchForm } from '../../components/MatchForm';
+import { MatchForm, PlayerStatsMap } from '../../components/MatchForm';
 import { AdBanner } from '../../components/AdBanner';
 import { UpgradeModal } from '../../components/UpgradeModal';
 import { PhotoViewer } from '../../components/PhotoViewer';
@@ -37,6 +38,20 @@ function formatFullDate(date: Date): string {
   const h = date.getHours().toString().padStart(2, '0');
   const min = date.getMinutes().toString().padStart(2, '0');
   return `${y}年${m}月${d}日(${day}) ${h}:${min}`;
+}
+
+// 保存済み区間を表示用テキストへ（前半フル / 後半5分〜終了 など）
+function formatInterval(iv: PlayInterval): string {
+  // 旧形式
+  if (iv.half == null && (iv.in != null || iv.out != null)) {
+    return `${iv.in ?? 0}〜${iv.out ?? 0}分`;
+  }
+  const halfLabel = iv.half === 2 ? '後半' : '前半';
+  const full = (iv.start === 'start' || iv.start == null) && (iv.end === 'end' || iv.end == null);
+  if (full) return `${halfLabel}フル`;
+  const startTxt = iv.start === 'start' || iv.start == null ? '開始' : `${iv.start}分`;
+  const endTxt = iv.end === 'end' || iv.end == null ? '終了' : `${iv.end}分`;
+  return `${halfLabel} ${startTxt}〜${endTxt}`;
 }
 
 export default function MatchDetailScreen() {
@@ -60,10 +75,13 @@ export default function MatchDetailScreen() {
 
   const date = match.date.toDate();
 
-  const handleUpdate = async (data: MatchFormData) => {
+  const handleUpdate = async (data: MatchFormData, playerStats: PlayerStatsMap | null) => {
     setSaving(true);
     try {
       await updateMatch(teamId, match.id, data);
+      if (playerStats) {
+        await updateMatchPlayerStats(teamId, match.id, playerStats);
+      }
       setEditing(false);
     } catch {
       Alert.alert('エラー', '更新に失敗しました');
@@ -131,6 +149,8 @@ export default function MatchDetailScreen() {
     ]);
   };
 
+  const playerIds = match.playerIds ?? [];
+
   if (editing) {
     return (
       <>
@@ -157,8 +177,10 @@ export default function MatchDetailScreen() {
             notes: match.notes,
             youtubeUrl: match.youtubeUrl,
             status: match.status,
+            halfMinutes: match.halfMinutes,
             playerIds: match.playerIds ?? [],
           }}
+          initialPlayerStats={match.playerStats}
           onSubmit={handleUpdate}
           onDelete={handleDelete}
           isEditing
@@ -223,7 +245,74 @@ export default function MatchDetailScreen() {
           )}
         </View>
 
-        {/* YouTube / 動画広告エリア */}
+        {/* 選手スタッツ */}
+        {playerIds.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.statsHeader}>
+              <Text style={styles.sectionTitle}>選手スタッツ</Text>
+              <Text style={styles.statsEditHint}>「編集」から登録</Text>
+            </View>
+
+            {!isPremium ? (
+              <TouchableOpacity style={styles.statsLocked} onPress={() => setShowUpgrade(true)}>
+                <Ionicons name="lock-closed" size={20} color={theme.textSecondary} />
+                <Text style={styles.statsLockedText}>
+                  選手ごとの得点・アシスト・出場時間はファミリープランで記録できます
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.statsCard}>
+                {playerIds.map((pid, idx) => {
+                  const p = players.find((pl) => pl.id === pid);
+                  if (!p) return null;
+                  const s = match.playerStats?.[pid];
+                  const g = s?.goals ?? 0;
+                  const a = s?.assists ?? 0;
+                  const c = s?.clears ?? 0;
+                  const ivs = s?.intervals ?? [];
+                  const matchHalf = match.halfMinutes ?? DEFAULT_HALF_MINUTES;
+                  const minutes = ivs.reduce((sum, iv) => sum + intervalMinutes(iv, matchHalf), 0);
+                  const ivLabel = ivs.map((iv) => formatInterval(iv)).join(' / ');
+                  return (
+                    <View
+                      key={pid}
+                      style={[styles.statReadRow, idx < playerIds.length - 1 && styles.statReadBorder]}
+                    >
+                      <View style={styles.statReadTop}>
+                        <TouchableOpacity
+                          style={styles.statNameTap}
+                          onPress={() => router.push(`/player/${pid}`)}
+                          activeOpacity={0.6}
+                        >
+                          <Text style={styles.statPlayerName} numberOfLines={1}>
+                            {p.number != null ? `#${p.number}  ` : ''}{p.name}
+                          </Text>
+                          <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
+                        </TouchableOpacity>
+                        <View style={styles.statReadNums}>
+                          <Text style={styles.statReadVal}>⚽ {g}</Text>
+                          <Text style={styles.statReadVal}>A {a}</Text>
+                          <Text style={styles.statReadVal}>🛡 {c}</Text>
+                        </View>
+                      </View>
+                      {minutes > 0 && (
+                        <Text style={styles.statReadMin}>
+                          出場 {minutes}分{ivLabel ? `（${ivLabel}）` : ''}
+                        </Text>
+                      )}
+                      {!!s?.note && <Text style={styles.statReadNote}>{s.note}</Text>}
+                    </View>
+                  );
+                })}
+                {!match.playerStats && (
+                  <Text style={styles.statsEmptyHint}>「編集」から得点・アシスト・出場時間を記録できます</Text>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 動画 */}
         {match.youtubeUrl ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>動画</Text>
@@ -231,32 +320,6 @@ export default function MatchDetailScreen() {
           </View>
         ) : (
           <AdBanner rectangle />
-        )}
-
-        {/* 出場選手 */}
-        {(match.playerIds ?? []).length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>出場選手</Text>
-            <View style={styles.playersList}>
-              {(match.playerIds ?? []).map((pid) => {
-                const p = players.find((pl) => pl.id === pid);
-                if (!p) return null;
-                return (
-                  <TouchableOpacity
-                    key={pid}
-                    style={styles.playerRow}
-                    onPress={() => router.push(`/player/${pid}`)}
-                  >
-                    <Ionicons name="person-circle-outline" size={20} color={theme.primary} />
-                    <Text style={styles.playerName}>
-                      {p.number != null ? `#${p.number}  ` : ''}{p.name}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
         )}
 
         {/* 試合の写真 */}
@@ -432,28 +495,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: theme.primary,
   },
-  playersList: {
-    backgroundColor: theme.white,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.border,
-    overflow: 'hidden',
-  },
-  playerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-  },
-  playerName: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    color: theme.text,
-  },
   photoRow: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
@@ -502,5 +543,107 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: theme.textSecondary,
     marginTop: spacing.xs,
+  },
+  statsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  statsEditHint: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+  },
+  statsLocked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: theme.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderStyle: 'dashed',
+  },
+  statsLockedText: {
+    flex: 1,
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    fontWeight: '600',
+  },
+  statsCard: {
+    backgroundColor: theme.white,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  statReadRow: {
+    paddingVertical: spacing.sm + 2,
+  },
+  statReadTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statReadBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  statReadNums: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  statReadVal: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: theme.text,
+  },
+  statReadMin: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  statReadNote: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  readTag: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  readTagGood: { backgroundColor: '#E8F5E9' },
+  readTagGoodText: { fontSize: 11, fontWeight: '700', color: '#2E7D32' },
+  readTagImprove: { backgroundColor: '#FFF3E0' },
+  readTagImproveText: { fontSize: 11, fontWeight: '700', color: '#E65100' },
+  statsEmptyHint: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    paddingVertical: spacing.sm,
+    textAlign: 'center',
+  },
+  statPlayerName: {
+    fontSize: fontSize.md,
+    fontWeight: '400',
+    color: theme.text,
+    flexShrink: 1,
+    marginBottom: spacing.xs,
+  },
+  statNameTap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 1,
+  },
+  tagWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
   },
 });

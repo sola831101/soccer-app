@@ -23,7 +23,7 @@ export const PLAN_LIMITS = {
     members: 10,
     dataRetentionMonths: Infinity,
     showAds: false,
-    playerStats: false,
+    playerStats: true,     // 選手ごとの得点・アシスト記録
     stepRecords: true,     // 所属チーム履歴
     playerPhoto: true,     // 顔写真
     toreisenRecords: true, // トレセン歴

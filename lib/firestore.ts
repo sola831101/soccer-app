@@ -15,7 +15,7 @@ import {
   arrayRemove,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Match, MatchFormData, Team, Venue, Player, PlayerPosition, Plan, PlayerStep, ToreisenRecord, ToreisenLevel } from './types';
+import { Match, MatchFormData, Team, Venue, Player, PlayerPosition, Plan, PlayerStep, ToreisenRecord, ToreisenLevel, PlayInterval } from './types';
 import { PLAN_LIMITS } from './plans';
 
 function generateShareCode(): string {
@@ -142,6 +142,7 @@ function buildMatchData(data: MatchFormData) {
     notes: data.notes || null,
     youtubeUrl: data.youtubeUrl || null,
     status: data.status,
+    halfMinutes: data.halfMinutes ?? 15,
     playerIds: data.playerIds ?? [],
   };
 }
@@ -169,6 +170,27 @@ export async function updateMatch(teamId: string, matchId: string, data: MatchFo
 
 export async function deleteMatch(teamId: string, matchId: string): Promise<void> {
   await deleteDoc(doc(db, 'teams', teamId, 'matches', matchId));
+}
+
+// ファミリー：選手ごとの得点・アシスト（メモ）をまとめて保存。
+// 引数のマップで playerStats フィールドを丸ごと置き換える（noteは空なら呼び出し側で除外済み想定）。
+export async function updateMatchPlayerStats(
+  teamId: string,
+  matchId: string,
+  playerStats: {
+    [playerId: string]: {
+      goals: number;
+      assists: number;
+      clears: number;
+      intervals?: PlayInterval[];
+      note?: string;
+    };
+  }
+): Promise<void> {
+  await updateDoc(doc(db, 'teams', teamId, 'matches', matchId), {
+    playerStats,
+    updatedAt: Timestamp.now(),
+  });
 }
 
 export async function addMatchPhoto(teamId: string, matchId: string, url: string): Promise<void> {

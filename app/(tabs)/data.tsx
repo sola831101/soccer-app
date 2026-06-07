@@ -1,17 +1,33 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, fontSize, spacing, borderRadius } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
-import { computeStats, computeOpponentStats, getAvailableFiscalYears } from '../../lib/stats';
+import { computeStats, computeOpponentStats, getAvailableFiscalYears, computePlayerStatLines, getFiscalYear } from '../../lib/stats';
 import { AdBanner } from '../../components/AdBanner';
 
 export default function DataScreen() {
-  const { matches, players } = useTeam();
+  const { matches, players, hasFeature } = useTeam();
   const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(undefined);
+  const [showAllOpponents, setShowAllOpponents] = useState(false);
 
   const fiscalYears = useMemo(() => getAvailableFiscalYears(matches), [matches]);
+
+  // 初期表示は「全期間」ではなく現在の年度をデフォルトに（データがあれば）。
+  // 現年度に試合が無ければ最新の年度へフォールバック。ユーザーが触った後は上書きしない。
+  const didInitYear = useRef(false);
+  useEffect(() => {
+    if (didInitYear.current) return;
+    if (matches.length === 0) return; // データ読み込み待ち
+    didInitYear.current = true;
+    const current = getFiscalYear(new Date());
+    if (fiscalYears.includes(current)) {
+      setSelectedYear(current);
+    } else if (fiscalYears.length > 0) {
+      setSelectedYear(fiscalYears[0]);
+    }
+  }, [matches, fiscalYears]);
 
   // 選手フィルター：選択中の選手が出場した試合のみ
   const filteredMatches = useMemo(() => {
@@ -21,6 +37,14 @@ export default function DataScreen() {
 
   const stats = useMemo(() => computeStats(filteredMatches, selectedYear), [filteredMatches, selectedYear]);
   const opponentStats = useMemo(() => computeOpponentStats(filteredMatches, selectedYear), [filteredMatches, selectedYear]);
+
+  // 選手成績ランキング（ファミリープラン）。選手フィルター中は全員集計のままにする
+  const canUsePlayerStats = hasFeature('playerStats');
+  const playerLines = useMemo(
+    () => computePlayerStatLines(matches, players, selectedYear),
+    [matches, players, selectedYear]
+  );
+  const hasAnyPlayerStat = playerLines.some((l) => l.goals > 0 || l.assists > 0 || l.clears > 0);
 
   const completedCount = filteredMatches.filter((m) => m.status === 'completed').length;
 
@@ -205,12 +229,12 @@ export default function DataScreen() {
           {opponentStats.length > 0 && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>対戦チーム別</Text>
-              {opponentStats.map((rec, idx) => (
+              {(showAllOpponents ? opponentStats : opponentStats.slice(0, 5)).map((rec, idx, arr) => (
                 <View
                   key={rec.opponent}
                   style={[
                     styles.opponentRow,
-                    idx < opponentStats.length - 1 && styles.opponentBorder,
+                    idx < arr.length - 1 && styles.opponentBorder,
                   ]}
                 >
                   <Text style={styles.opponentName}>{rec.opponent}</Text>
@@ -226,6 +250,75 @@ export default function DataScreen() {
                   </View>
                 </View>
               ))}
+              {opponentStats.length > 5 && (
+                <TouchableOpacity
+                  style={styles.moreButton}
+                  onPress={() => setShowAllOpponents((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.moreButtonText}>
+                    {showAllOpponents ? '閉じる' : `もっと見る（全${opponentStats.length}チーム）`}
+                  </Text>
+                  <Ionicons
+                    name={showAllOpponents ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color={theme.primary}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* 選手成績ランキング（ファミリープラン） */}
+          {canUsePlayerStats && players.length > 0 && hasAnyPlayerStat && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>選手成績</Text>
+              {playerLines
+                .filter((l) => l.goals > 0 || l.assists > 0 || l.matches > 0)
+                .map((line, idx, arr) => (
+                  <View
+                    key={line.playerId}
+                    style={[
+                      styles.playerStatRow,
+                      idx < arr.length - 1 && styles.opponentBorder,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.playerStatRank,
+                        idx === 0 && { backgroundColor: '#FFD700' },
+                        idx === 1 && { backgroundColor: '#C0C0C0' },
+                        idx === 2 && { backgroundColor: '#CD7F32' },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.playerStatRankText, idx <= 2 && { color: theme.white }]}
+                      >
+                        {idx + 1}
+                      </Text>
+                    </View>
+                    <View style={styles.playerStatInfo}>
+                      <Text style={styles.playerStatName} numberOfLines={1}>
+                        {line.number != null ? `#${line.number} ` : ''}{line.name}
+                      </Text>
+                      <Text style={styles.playerStatSub}>{line.matches}試合出場</Text>
+                    </View>
+                    <View style={styles.playerStatNums}>
+                      <View style={styles.playerStatNumItem}>
+                        <Text style={[styles.playerStatNum, { color: theme.officialBadge }]}>{line.goals}</Text>
+                        <Text style={styles.playerStatNumLabel}>得点</Text>
+                      </View>
+                      <View style={styles.playerStatNumItem}>
+                        <Text style={[styles.playerStatNum, { color: '#8E24AA' }]}>{line.assists}</Text>
+                        <Text style={styles.playerStatNumLabel}>アシスト</Text>
+                      </View>
+                      <View style={styles.playerStatNumItem}>
+                        <Text style={[styles.playerStatNum, { color: '#00897B' }]}>{line.clears}</Text>
+                        <Text style={styles.playerStatNumLabel}>ブロック</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
             </View>
           )}
         </>
@@ -415,6 +508,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.border,
   },
+  moreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  moreButtonText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: theme.primary,
+  },
   opponentName: {
     fontSize: fontSize.md,
     fontWeight: '700',
@@ -438,5 +544,55 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: theme.textSecondary,
     fontWeight: '600',
+  },
+  playerStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  playerStatRank: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  playerStatRankText: {
+    fontSize: fontSize.sm,
+    fontWeight: '800',
+    color: theme.textSecondary,
+  },
+  playerStatInfo: {
+    flex: 1,
+  },
+  playerStatName: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: theme.text,
+  },
+  playerStatSub: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    marginTop: 2,
+  },
+  playerStatNums: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  playerStatNumItem: {
+    alignItems: 'center',
+    minWidth: 38,
+  },
+  playerStatNum: {
+    fontSize: fontSize.md,
+    fontWeight: '800',
+  },
+  playerStatNumLabel: {
+    fontSize: 10,
+    color: theme.textSecondary,
+    fontWeight: '600',
+    marginTop: 1,
   },
 });

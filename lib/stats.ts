@@ -1,4 +1,19 @@
-import { Match } from './types';
+import { Match, PlayInterval } from './types';
+
+// 1ハーフの既定の長さ（分）。試合にhalfMinutesが未設定の場合のフォールバック
+export const DEFAULT_HALF_MINUTES = 15;
+
+// 出場区間1つの出場分を算出（新形式・旧形式の両方に対応）
+export function intervalMinutes(iv: PlayInterval, halfMinutes: number): number {
+  // 旧形式（in/out が試合通算分）
+  if (iv.in != null || iv.out != null) {
+    return Math.max(0, (iv.out ?? 0) - (iv.in ?? 0));
+  }
+  // 新形式（ハーフ内の経過分。'start'=0, 'end'=halfMinutes）
+  const start = iv.start === 'start' || iv.start == null ? 0 : Number(iv.start);
+  const end = iv.end === 'end' || iv.end == null ? halfMinutes : Number(iv.end);
+  return Math.max(0, end - start);
+}
 
 export interface SeasonStats {
   totalMatches: number;
@@ -180,4 +195,120 @@ export function computeOpponentStats(matches: Match[], fiscalYear?: number): Opp
   }
 
   return Array.from(map.values()).sort((a, b) => b.matches - a.matches);
+}
+
+// --- 選手スタッツ（ファミリー：得点・アシスト・出場） ---
+
+export interface PlayerTotals {
+  matches: number; // 出場数（status==='completed'）
+  goals: number;
+  assists: number;
+  clears: number; // ブロック数
+  minutes: number; // 合計出場時間（分）
+}
+
+export interface PlayerStatLine extends PlayerTotals {
+  playerId: string;
+  name: string;
+  number?: number;
+}
+
+/**
+ * 試合配列から1選手の累計を集計（内部共通処理）。
+ * 出場数は完了済み試合のみ。得点・アシスト・クリアは記録(playerStats)から集計。
+ */
+function sumPlayerStats(matches: Match[], playerId: string): PlayerTotals {
+  let played = 0;
+  let goals = 0;
+  let assists = 0;
+  let clears = 0;
+  let minutes = 0;
+  for (const m of matches) {
+    if (m.status === 'completed') played++;
+    const s = m.playerStats?.[playerId];
+    if (s) {
+      goals += s.goals ?? 0;
+      assists += s.assists ?? 0;
+      clears += s.clears ?? 0;
+      for (const iv of s.intervals ?? []) {
+        minutes += intervalMinutes(iv, m.halfMinutes ?? DEFAULT_HALF_MINUTES);
+      }
+    }
+  }
+  return { matches: played, goals, assists, clears, minutes };
+}
+
+/**
+ * 選手が出場した試合（playerIdsに含まれる）を抽出。fiscalYear指定で年度フィルタ。
+ */
+function playerMatches(matches: Match[], playerId: string, fiscalYear?: number): Match[] {
+  let filtered = matches.filter((m) => (m.playerIds ?? []).includes(playerId));
+  if (fiscalYear !== undefined) {
+    const { start, end } = getFiscalYearRange(fiscalYear);
+    filtered = filtered.filter((m) => {
+      const d = m.date.toDate();
+      return d >= start && d <= end;
+    });
+  }
+  return filtered;
+}
+
+/**
+ * 1選手の累計（出場数・得点・アシスト・クリア）。fiscalYear指定で年度フィルタ。
+ */
+export function computePlayerTotals(
+  matches: Match[],
+  playerId: string,
+  fiscalYear?: number
+): PlayerTotals {
+  return sumPlayerStats(playerMatches(matches, playerId, fiscalYear), playerId);
+}
+
+/**
+ * 1選手の公式戦／練習試合の内訳累計。
+ */
+export function computePlayerSplit(
+  matches: Match[],
+  playerId: string,
+  fiscalYear?: number
+): { official: PlayerTotals; practice: PlayerTotals } {
+  const filtered = playerMatches(matches, playerId, fiscalYear);
+  return {
+    official: sumPlayerStats(filtered.filter((m) => m.matchType === 'official'), playerId),
+    practice: sumPlayerStats(filtered.filter((m) => m.matchType !== 'official'), playerId),
+  };
+}
+
+/**
+ * 1選手の年度別累計（年度降順）。出場のある年度のみ。
+ */
+export function computePlayerYearlyTotals(
+  matches: Match[],
+  playerId: string
+): { fiscalYear: number; totals: PlayerTotals }[] {
+  const filtered = playerMatches(matches, playerId);
+  const years = new Set<number>();
+  for (const m of filtered) years.add(getFiscalYear(m.date.toDate()));
+  return Array.from(years)
+    .sort((a, b) => b - a)
+    .map((fy) => ({ fiscalYear: fy, totals: computePlayerTotals(matches, playerId, fy) }));
+}
+
+/**
+ * 全選手のスタッツ一覧（得点降順 → アシスト降順 → クリア降順 → 出場降順）
+ */
+export function computePlayerStatLines(
+  matches: Match[],
+  players: { id: string; name: string; number?: number }[],
+  fiscalYear?: number
+): PlayerStatLine[] {
+  return players
+    .map((p) => {
+      const t = computePlayerTotals(matches, p.id, fiscalYear);
+      return { playerId: p.id, name: p.name, number: p.number, ...t };
+    })
+    .sort(
+      (a, b) =>
+        b.goals - a.goals || b.assists - a.assists || b.clears - a.clears || b.matches - a.matches
+    );
 }

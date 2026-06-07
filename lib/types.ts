@@ -15,6 +15,29 @@ export interface Team {
   createdAt: Timestamp;
 }
 
+// 出場区間
+// 新形式: 前半/後半ごとに「スタメン(開始から) or ○分から」「最後まで or ○分まで」を記録。
+//   half=1(前半)/2(後半)。start/end は 'start'/'end'(=ハーフの端)または分(number)。
+//   ハーフ内の経過分で表す（後半5分から=後半の5分地点）。試合のhalfMinutesで終端を計算。
+// 旧形式(後方互換): in/out を分(試合通算)で持つ既存データも読めるようにする。
+export interface PlayInterval {
+  half?: 1 | 2;
+  start?: 'start' | number;
+  end?: 'end' | number;
+  // --- 旧形式（後方互換・新規書き込みはしない） ---
+  in?: number;
+  out?: number;
+}
+
+// ファミリープラン：1試合あたりの選手スタッツ
+export interface PlayerMatchStat {
+  goals: number;
+  assists: number;
+  clears: number;            // ブロック数（守備指標。多少のブレ許容）
+  intervals?: PlayInterval[]; // 出場区間（出入り自由）
+  note?: string;
+}
+
 export interface Match {
   id: string;
   teamId: string;
@@ -30,7 +53,9 @@ export interface Match {
   notes?: string;
   youtubeUrl?: string;
   status: MatchStatus;
+  halfMinutes?: number;  // 1ハーフの長さ（分）。出場時間の「最後まで」計算に使用。未設定時は既定値
   playerIds?: string[];  // 出場予定・出場した選手
+  playerStats?: { [playerId: string]: PlayerMatchStat }; // ファミリー：選手ごとの得点・アシスト
   photos?: string[];     // 試合の写真（Storage URL配列）
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -48,6 +73,7 @@ export interface MatchFormData {
   notes?: string;
   youtubeUrl?: string;
   status: MatchStatus;
+  halfMinutes?: number;  // 1ハーフの長さ（分）
   playerIds?: string[];  // 出場予定・出場した選手
 }
 

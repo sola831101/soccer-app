@@ -3,9 +3,9 @@ import { Alert, ActivityIndicator, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { useTeam } from '../../lib/context/TeamContext';
-import { createMatch } from '../../lib/firestore';
+import { createMatch, updateMatchPlayerStats } from '../../lib/firestore';
 import { MatchFormData } from '../../lib/types';
-import { MatchForm } from '../../components/MatchForm';
+import { MatchForm, PlayerStatsMap } from '../../components/MatchForm';
 import { UpgradeModal } from '../../components/UpgradeModal';
 import { PLAN_LIMITS } from '../../lib/plans';
 import { maybeRequestReview } from '../../lib/review';
@@ -17,7 +17,7 @@ export default function NewMatchScreen() {
 
   const matchLimit = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS]?.matchesPerMonth ?? PLAN_LIMITS.free.matchesPerMonth;
 
-  const handleSubmit = async (data: MatchFormData) => {
+  const handleSubmit = async (data: MatchFormData, playerStats: PlayerStatsMap | null) => {
     if (!teamId) return;
 
     const now = new Date();
@@ -33,7 +33,10 @@ export default function NewMatchScreen() {
 
     setSaving(true);
     try {
-      await createMatch(teamId, data);
+      const newId = await createMatch(teamId, data);
+      if (playerStats && Object.keys(playerStats).length > 0) {
+        await updateMatchPlayerStats(teamId, newId, playerStats);
+      }
       maybeRequestReview({
         totalMatchCount: matches.length + 1,
         currentMonthMatchCount: matchesThisMonth.length + 1,

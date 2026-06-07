@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
@@ -8,6 +8,14 @@ import { TeamProvider } from '../lib/context/TeamContext';
 import { theme } from '../constants/theme';
 import { ForceUpdateModal } from '../components/ForceUpdateModal';
 import { AppVersionConfig, needsForceUpdate, subscribeToAppVersion } from '../lib/version';
+import { AnnouncementModal } from '../components/AnnouncementModal';
+import {
+  AnnouncementConfig,
+  subscribeToAnnouncement,
+  getSeenAnnouncementId,
+  markAnnouncementSeen,
+  shouldShowAnnouncement,
+} from '../lib/announcement';
 
 Sentry.init({
   dsn: Constants.expoConfig?.extra?.sentryDsn ?? '',
@@ -36,10 +44,42 @@ export default function RootLayout() {
   }, []);
   const forceUpdate = needsForceUpdate(versionConfig);
 
+  // アプリ内お知らせ（新機能告知など）
+  const pathname = usePathname();
+  const [announcement, setAnnouncement] = useState<AnnouncementConfig | null>(null);
+  const [seenId, setSeenId] = useState<string | null>(null);
+  const [seenLoaded, setSeenLoaded] = useState(false);
+  useEffect(() => {
+    getSeenAnnouncementId().then((id) => {
+      setSeenId(id);
+      setSeenLoaded(true);
+    });
+  }, []);
+  useEffect(() => {
+    const unsub = subscribeToAnnouncement(setAnnouncement);
+    return unsub;
+  }, []);
+  const showAnnouncement =
+    seenLoaded &&
+    !forceUpdate &&
+    !pathname.startsWith('/onboarding') &&
+    shouldShowAnnouncement(announcement, seenId);
+  const handleCloseAnnouncement = () => {
+    if (announcement?.id) {
+      markAnnouncementSeen(announcement.id);
+      setSeenId(announcement.id);
+    }
+  };
+
   return (
     <TeamProvider>
       <StatusBar style="dark" />
       <ForceUpdateModal visible={forceUpdate} config={versionConfig} />
+      <AnnouncementModal
+        visible={showAnnouncement}
+        config={announcement}
+        onClose={handleCloseAnnouncement}
+      />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: theme.background },

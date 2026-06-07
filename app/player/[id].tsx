@@ -28,6 +28,7 @@ import {
 } from '../../lib/firestore';
 import { uploadPlayerPhoto } from '../../lib/storage';
 import { PlayerStep, PlayerPosition, ToreisenRecord, ToreisenLevel } from '../../lib/types';
+import { computePlayerTotals, computePlayerSplit, computePlayerYearlyTotals } from '../../lib/stats';
 
 let ImagePicker: typeof import('expo-image-picker') | null = null;
 try { ImagePicker = require('expo-image-picker'); } catch { ImagePicker = null; }
@@ -100,6 +101,9 @@ export default function PlayerDetailScreen() {
   const player = players.find((p) => p.id === id);
 
   const canUseFamily = hasFeature('stepRecords');
+  const canUsePlayerStats = hasFeature('playerStats');
+  const [showMoreStats, setShowMoreStats] = useState(true);
+  const [showAllMatches, setShowAllMatches] = useState(false);
 
   const [steps, setSteps] = useState<PlayerStep[]>([]);
   const [toreisenList, setToreisenList] = useState<ToreisenRecord[]>([]);
@@ -344,6 +348,16 @@ export default function PlayerDetailScreen() {
   const wins = completedMatches.filter((m) => m.result === 'win').length;
   const draws = completedMatches.filter((m) => m.result === 'draw').length;
   const losses = completedMatches.filter((m) => m.result === 'loss').length;
+  const {
+    matches: statMatchCount,
+    goals: playerGoals,
+    assists: playerAssists,
+    clears: playerClears,
+    minutes: playerMinutes,
+  } = computePlayerTotals(matches, player.id);
+  const playerSplit = computePlayerSplit(matches, player.id);
+  const playerYearly = computePlayerYearlyTotals(matches, player.id);
+  const avg = (v: number) => (statMatchCount > 0 ? (v / statMatchCount).toFixed(1) : '0.0');
 
   function formatMatchDate(d: Date): string {
     const days = ['日', '月', '火', '水', '木', '金', '土'];
@@ -477,7 +491,26 @@ export default function PlayerDetailScreen() {
                 </>
               )}
             </View>
-            {participatedMatches.slice(0, 5).map((m) => (
+            {canUsePlayerStats && (
+              <View style={styles.matchStatsRow}>
+                <View style={[styles.matchStatItem, { backgroundColor: '#E3F2FD' }]}>
+                  <Text style={[styles.matchStatNum, { color: theme.officialBadge }]}>{playerGoals}</Text>
+                  <Text style={styles.matchStatLabel}>得点</Text>
+                </View>
+                <View style={[styles.matchStatItem, { backgroundColor: '#F3E5F5' }]}>
+                  <Text style={[styles.matchStatNum, { color: '#8E24AA' }]}>{playerAssists}</Text>
+                  <Text style={styles.matchStatLabel}>アシスト</Text>
+                </View>
+                <View style={[styles.matchStatItem, { backgroundColor: '#E0F2F1' }]}>
+                  <Text style={[styles.matchStatNum, { color: '#00897B' }]}>{playerClears}</Text>
+                  <Text style={styles.matchStatLabel}>ブロック</Text>
+                </View>
+              </View>
+            )}
+            {(showAllMatches ? participatedMatches : participatedMatches.slice(0, 5)).map((m) => {
+              const ps = canUsePlayerStats ? m.playerStats?.[player.id] : undefined;
+              const hasPs = !!ps && ((ps.goals ?? 0) > 0 || (ps.assists ?? 0) > 0 || (ps.clears ?? 0) > 0);
+              return (
               <TouchableOpacity
                 key={m.id}
                 style={styles.matchRow}
@@ -485,6 +518,13 @@ export default function PlayerDetailScreen() {
               >
                 <Text style={styles.matchRowDate}>{formatMatchDate(m.date.toDate())}</Text>
                 <Text style={styles.matchRowOpponent} numberOfLines={1}>vs {m.opponent}</Text>
+                {hasPs && (
+                  <Text style={styles.matchRowPs}>
+                    {(ps!.goals ?? 0) > 0 ? `⚽${ps!.goals}` : ''}
+                    {(ps!.assists ?? 0) > 0 ? ` A${ps!.assists}` : ''}
+                    {(ps!.clears ?? 0) > 0 ? ` 🛡${ps!.clears}` : ''}
+                  </Text>
+                )}
                 {m.result != null ? (
                   <View style={[styles.resultBadge, { backgroundColor: m.result === 'win' ? theme.win : m.result === 'loss' ? theme.loss : '#F9A825' }]}>
                     <Text style={styles.resultBadgeText}>{m.result === 'win' ? '勝' : m.result === 'loss' ? '敗' : '分'}</Text>
@@ -496,7 +536,106 @@ export default function PlayerDetailScreen() {
                 )}
                 <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
               </TouchableOpacity>
-            ))}
+              );
+            })}
+
+            {participatedMatches.length > 5 && (
+              <TouchableOpacity
+                style={styles.moreMatchesBtn}
+                onPress={() => setShowAllMatches((v) => !v)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.moreMatchesText}>
+                  {showAllMatches ? '閉じる' : `もっと見る（全${participatedMatches.length}試合）`}
+                </Text>
+                <Ionicons
+                  name={showAllMatches ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={theme.primary}
+                />
+              </TouchableOpacity>
+            )}
+
+            {/* もっと詳しく（区分別／出場時間／年度別） */}
+            {canUsePlayerStats &&
+              (playerGoals > 0 || playerAssists > 0 || playerClears > 0 || playerMinutes > 0) && (
+              <>
+                <TouchableOpacity
+                  style={styles.moreStatsToggle}
+                  onPress={() => setShowMoreStats((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.moreStatsToggleText}>もっと詳しく</Text>
+                  <Ionicons
+                    name={showMoreStats ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color={theme.primary}
+                  />
+                </TouchableOpacity>
+
+                {showMoreStats && (
+                  <View style={styles.moreStatsBox}>
+                    {/* 区分別 */}
+                    <Text style={styles.moreStatsHeading}>区分別</Text>
+                    <View style={styles.moreStatsHeaderRow}>
+                      <Text style={[styles.moreStatsCell, styles.moreStatsCellLabel]}> </Text>
+                      <Text style={styles.moreStatsCell}>試合</Text>
+                      <Text style={styles.moreStatsCell}>得点</Text>
+                      <Text style={styles.moreStatsCell}>アシスト</Text>
+                      <Text style={styles.moreStatsCell}>ブロック</Text>
+                    </View>
+                    <View style={styles.moreStatsDataRow}>
+                      <Text style={[styles.moreStatsCell, styles.moreStatsCellLabel]}>公式戦</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.official.matches}</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.official.goals}</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.official.assists}</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.official.clears}</Text>
+                    </View>
+                    <View style={styles.moreStatsDataRow}>
+                      <Text style={[styles.moreStatsCell, styles.moreStatsCellLabel]}>練習試合</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.practice.matches}</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.practice.goals}</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.practice.assists}</Text>
+                      <Text style={styles.moreStatsCell}>{playerSplit.practice.clears}</Text>
+                    </View>
+
+                    {/* 1試合平均・出場時間 */}
+                    <Text style={[styles.moreStatsHeading, { marginTop: spacing.md }]}>1試合平均</Text>
+                    <Text style={styles.moreStatsAvg}>
+                      得点 {avg(playerGoals)}　アシスト {avg(playerAssists)}　ブロック {avg(playerClears)}
+                    </Text>
+                    {playerMinutes > 0 && (
+                      <Text style={[styles.moreStatsAvg, { marginTop: 4 }]}>
+                        出場時間 合計 {playerMinutes}分　平均 {avg(playerMinutes)}分
+                      </Text>
+                    )}
+
+                    {/* 年度別 */}
+                    {playerYearly.length > 1 && (
+                      <>
+                        <Text style={[styles.moreStatsHeading, { marginTop: spacing.md }]}>年度別</Text>
+                        <View style={styles.moreStatsHeaderRow}>
+                          <Text style={[styles.moreStatsCell, styles.moreStatsCellLabel]}> </Text>
+                          <Text style={styles.moreStatsCell}>試合</Text>
+                          <Text style={styles.moreStatsCell}>得点</Text>
+                          <Text style={styles.moreStatsCell}>アシスト</Text>
+                          <Text style={styles.moreStatsCell}>ブロック</Text>
+                        </View>
+                        {playerYearly.map((y) => (
+                          <View key={y.fiscalYear} style={styles.moreStatsDataRow}>
+                            <Text style={[styles.moreStatsCell, styles.moreStatsCellLabel]}>{y.fiscalYear}年度</Text>
+                            <Text style={styles.moreStatsCell}>{y.totals.matches}</Text>
+                            <Text style={styles.moreStatsCell}>{y.totals.goals}</Text>
+                            <Text style={styles.moreStatsCell}>{y.totals.assists}</Text>
+                            <Text style={styles.moreStatsCell}>{y.totals.clears}</Text>
+                          </View>
+                        ))}
+                      </>
+                    )}
+                  </View>
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -779,6 +918,44 @@ const styles = StyleSheet.create({
   },
   matchRowDate: { fontSize: fontSize.xs, color: theme.textSecondary, fontWeight: '500', width: 54 },
   matchRowOpponent: { flex: 1, fontSize: fontSize.sm, fontWeight: '600', color: theme.text },
+  matchRowPs: { fontSize: fontSize.xs, fontWeight: '700', color: theme.officialBadge },
   resultBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.full },
   resultBadgeText: { fontSize: 11, fontWeight: '700', color: theme.white },
+  moreStatsToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: spacing.sm, marginTop: 2,
+  },
+  moreStatsToggleText: { fontSize: fontSize.sm, fontWeight: '700', color: theme.primary },
+  moreStatsBox: {
+    backgroundColor: theme.surface, borderRadius: borderRadius.sm,
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  moreStatsHeading: { fontSize: fontSize.sm, fontWeight: '700', color: theme.text, marginBottom: spacing.xs },
+  moreStatsHeaderRow: {
+    flexDirection: 'row', paddingVertical: 4,
+    borderBottomWidth: 1, borderBottomColor: theme.border,
+  },
+  moreStatsDataRow: {
+    flexDirection: 'row', paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: theme.border,
+  },
+  moreStatsCell: { flex: 1, fontSize: fontSize.xs, color: theme.text, textAlign: 'center', fontWeight: '600' },
+  moreStatsCellLabel: { flex: 1.4, textAlign: 'left', color: theme.textSecondary },
+  moreStatsAvg: { fontSize: fontSize.sm, color: theme.text, fontWeight: '600' },
+  moreMatchesBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: spacing.sm, marginTop: 2, marginBottom: spacing.xs,
+  },
+  moreMatchesText: { fontSize: fontSize.sm, fontWeight: '700', color: theme.primary },
+  tagGroupLabel: { fontSize: fontSize.xs, color: theme.textSecondary, fontWeight: '700', marginTop: spacing.xs },
+  tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  aggTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full,
+  },
+  aggTagGood: { backgroundColor: '#E8F5E9' },
+  aggTagGoodText: { fontSize: 12, fontWeight: '700', color: '#2E7D32' },
+  aggTagImprove: { backgroundColor: '#FFF3E0' },
+  aggTagImproveText: { fontSize: 12, fontWeight: '700', color: '#E65100' },
+  aggTagCount: { fontSize: 11, fontWeight: '800', color: theme.textSecondary },
 });

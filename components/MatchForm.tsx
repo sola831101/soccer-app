@@ -16,19 +16,89 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
-import { MatchFormData, MatchType, MatchStatus, Venue } from '../lib/types';
+import { MatchFormData, MatchType, MatchStatus, Venue, PlayerMatchStat, PlayInterval } from '../lib/types';
 import { useTeam } from '../lib/context/TeamContext';
 import { createVenue } from '../lib/firestore';
 
+// 1ハーフの長さ（分）の選択範囲
+const HALF_MIN = 5;
+const HALF_MAX = 45;
+const HALF_DEFAULT = 15;
+
+// onSubmit で親に渡す選手スタッツのマップ型
+export type PlayerStatsMap = {
+  [pid: string]: {
+    goals: number;
+    assists: number;
+    clears: number;
+    intervals?: PlayInterval[];
+    note?: string;
+  };
+};
+
+// 出場区間の編集用ドラフト（前半/後半 × 開始/終了の指定）
+type IntervalDraft = {
+  half: 1 | 2;
+  startKind: 'start' | 'min'; // 開始から or ○分から
+  startMin: string;
+  endKind: 'end' | 'min';     // 最後まで or ○分で交代
+  endMin: string;
+};
+const makeHalf = (half: 1 | 2): IntervalDraft => ({
+  half, startKind: 'start', startMin: '', endKind: 'end', endMin: '',
+});
+
+type StatDraft = {
+  goals: number;
+  assists: number;
+  clears: number;
+  fullTime: boolean;          // フル出場（前後半とも最後まで）
+  intervals: IntervalDraft[];
+  note: string;
+};
+const emptyStatDraft = (): StatDraft => ({
+  goals: 0, assists: 0, clears: 0, fullTime: false, intervals: [], note: '',
+});
+
+// 保存済みスタッツ → 編集ドラフトへ変換（旧形式 in/out も読み込む）
+function draftFromStat(s?: PlayerMatchStat): StatDraft {
+  const intervals: IntervalDraft[] = (s?.intervals ?? []).map((iv): IntervalDraft => {
+    if (iv.half == null && (iv.in != null || iv.out != null)) {
+      return { half: 1, startKind: 'min', startMin: String(iv.in ?? 0), endKind: 'min', endMin: String(iv.out ?? 0) };
+    }
+    return {
+      half: iv.half === 2 ? 2 : 1,
+      startKind: iv.start === 'start' || iv.start == null ? 'start' : 'min',
+      startMin: typeof iv.start === 'number' ? String(iv.start) : '',
+      endKind: iv.end === 'end' || iv.end == null ? 'end' : 'min',
+      endMin: typeof iv.end === 'number' ? String(iv.end) : '',
+    };
+  });
+  // 前半フル＋後半フルの2区間ならフル出場として扱う
+  const isFull =
+    intervals.length === 2 &&
+    intervals.some((d) => d.half === 1 && d.startKind === 'start' && d.endKind === 'end') &&
+    intervals.some((d) => d.half === 2 && d.startKind === 'start' && d.endKind === 'end');
+  return {
+    goals: s?.goals ?? 0,
+    assists: s?.assists ?? 0,
+    clears: s?.clears ?? 0,
+    fullTime: isFull,
+    intervals,
+    note: s?.note ?? '',
+  };
+}
+
 interface Props {
   initialData?: Partial<MatchFormData>;
-  onSubmit: (data: MatchFormData) => void;
+  initialPlayerStats?: { [pid: string]: PlayerMatchStat };
+  onSubmit: (data: MatchFormData, playerStats: PlayerStatsMap | null) => void;
   onDelete?: () => void;
   isEditing?: boolean;
 }
 
-export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props) {
-  const { venues, teamId, players } = useTeam();
+export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete, isEditing }: Props) {
+  const { venues, teamId, players, isPremium } = useTeam();
   const [date, setDate] = useState(initialData?.date || new Date());
   const [androidPickerMode, setAndroidPickerMode] = useState<'date' | 'time' | null>(null);
   const [opponent, setOpponent] = useState(initialData?.opponent || '');
@@ -44,11 +114,93 @@ export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props)
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [youtubeUrl, setYoutubeUrl] = useState(initialData?.youtubeUrl || '');
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(initialData?.playerIds ?? []);
+  const [halfMinutes, setHalfMinutes] = useState<number>(initialData?.halfMinutes ?? HALF_DEFAULT);
+  const [statsDraft, setStatsDraft] = useState<Record<string, StatDraft>>(() => {
+    const d: Record<string, StatDraft> = {};
+    for (const pid of initialData?.playerIds ?? []) {
+      d[pid] = draftFromStat(initialPlayerStats?.[pid]);
+    }
+    return d;
+  });
 
   const togglePlayer = (playerId: string) => {
     setSelectedPlayerIds((prev) =>
       prev.includes(playerId) ? prev.filter((id) => id !== playerId) : [...prev, playerId]
     );
+    // 初選択時にドラフトを用意（既存スタッツがあれば読み込む）
+    setStatsDraft((prev) =>
+      prev[playerId] ? prev : { ...prev, [playerId]: draftFromStat(initialPlayerStats?.[playerId]) }
+    );
+  };
+
+  // ----- 選手スタッツ編集ハンドラ -----
+  const getDraft = (pid: string): StatDraft => statsDraft[pid] ?? emptyStatDraft();
+  const updateStatDraft = (pid: string, patch: Partial<StatDraft>) => {
+    setStatsDraft((prev) => ({ ...prev, [pid]: { ...(prev[pid] ?? emptyStatDraft()), ...patch } }));
+  };
+  const adjustStat = (pid: string, key: 'goals' | 'assists' | 'clears', delta: number) => {
+    const cur = getDraft(pid);
+    updateStatDraft(pid, { [key]: Math.max(0, (cur[key] ?? 0) + delta) });
+  };
+  const toggleFullTime = (pid: string) => {
+    const cur = getDraft(pid);
+    updateStatDraft(pid, { fullTime: !cur.fullTime });
+  };
+  const addInterval = (pid: string) => {
+    const cur = getDraft(pid);
+    const hasFirst = cur.intervals.some((iv) => iv.half === 1);
+    updateStatDraft(pid, { intervals: [...cur.intervals, makeHalf(hasFirst ? 2 : 1)] });
+  };
+  const removeInterval = (pid: string, idx: number) => {
+    const cur = getDraft(pid);
+    updateStatDraft(pid, { intervals: cur.intervals.filter((_, i) => i !== idx) });
+  };
+  const setIntervalField = (pid: string, idx: number, patch: Partial<IntervalDraft>) => {
+    const cur = getDraft(pid);
+    const next = cur.intervals.map((iv, i) => (i === idx ? { ...iv, ...patch } : iv));
+    updateStatDraft(pid, { intervals: next });
+  };
+
+  // ドラフト → 保存用スタッツマップ
+  const buildPlayerStats = (): PlayerStatsMap => {
+    const clean: PlayerStatsMap = {};
+    for (const pid of selectedPlayerIds) {
+      const v = statsDraft[pid];
+      if (!v) continue;
+      let intervals: PlayInterval[] = [];
+      if (v.fullTime) {
+        intervals = [
+          { half: 1, start: 'start', end: 'end' },
+          { half: 2, start: 'start', end: 'end' },
+        ];
+      } else {
+        for (const d of v.intervals) {
+          const startN = d.startKind === 'start' ? 0 : parseInt(d.startMin, 10);
+          const endN = d.endKind === 'end' ? halfMinutes : parseInt(d.endMin, 10);
+          if (d.startKind === 'min' && isNaN(startN)) continue;
+          if (d.endKind === 'min' && isNaN(endN)) continue;
+          if (!(endN > startN)) continue;
+          intervals.push({
+            half: d.half,
+            start: d.startKind === 'start' ? 'start' : startN,
+            end: d.endKind === 'end' ? 'end' : endN,
+          });
+        }
+      }
+      const note = v.note.trim();
+      const hasAny =
+        v.goals > 0 || v.assists > 0 || v.clears > 0 ||
+        intervals.length > 0 || note;
+      if (!hasAny) continue;
+      clean[pid] = {
+        goals: v.goals,
+        assists: v.assists,
+        clears: v.clears,
+        ...(intervals.length ? { intervals } : {}),
+        ...(note ? { note } : {}),
+      };
+    }
+    return clean;
   };
 
   // ステータスは日付から自動判定
@@ -94,10 +246,12 @@ export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props)
       notes: notes.trim() || undefined,
       youtubeUrl: youtubeUrl.trim() || undefined,
       status,
+      halfMinutes,
       playerIds: selectedPlayerIds,
     };
 
-    onSubmit(formData);
+    const stats = isPremium ? buildPlayerStats() : null;
+    onSubmit(formData, stats);
   };
 
   const selectVenue = (v: Venue) => {
@@ -338,6 +492,25 @@ export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props)
           </>
         )}
 
+        {/* 1ハーフの長さ */}
+        <Text style={styles.label}>1ハーフの長さ</Text>
+        <View style={styles.halfStepRow}>
+          <TouchableOpacity
+            style={styles.halfStepBtn}
+            onPress={() => setHalfMinutes((v) => Math.max(HALF_MIN, v - 1))}
+          >
+            <Ionicons name="remove" size={20} color={theme.primary} />
+          </TouchableOpacity>
+          <Text style={styles.halfStepValue}>{halfMinutes}分</Text>
+          <TouchableOpacity
+            style={styles.halfStepBtn}
+            onPress={() => setHalfMinutes((v) => Math.min(HALF_MAX, v + 1))}
+          >
+            <Ionicons name="add" size={20} color={theme.primary} />
+          </TouchableOpacity>
+          <Text style={styles.halfStepHint}>ハーフ</Text>
+        </View>
+
         {/* 出場選手 */}
         {players.length > 0 && (
           <>
@@ -355,6 +528,172 @@ export function MatchForm({ initialData, onSubmit, onDelete, isEditing }: Props)
                       {p.number != null ? `#${p.number} ` : ''}{p.name}
                     </Text>
                   </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
+
+        {/* 選手スタッツ（ファミリープラン・完了した試合のみ） */}
+        {isPremium && status === 'completed' && selectedPlayerIds.length > 0 && (
+          <>
+            <Text style={styles.label}>選手スタッツ</Text>
+            <View style={styles.statsCard}>
+              {selectedPlayerIds.map((pid) => {
+                const p = players.find((pl) => pl.id === pid);
+                if (!p) return null;
+                const d = getDraft(pid);
+                return (
+                  <View key={pid} style={styles.statEditBlock}>
+                    <Text style={styles.statPlayerName} numberOfLines={1}>
+                      {p.number != null ? `#${p.number}  ` : ''}{p.name}
+                    </Text>
+
+                    {/* 得点・アシスト・ブロック */}
+                    {([
+                      { key: 'goals' as const, icon: 'football' as const, label: '得点' },
+                      { key: 'assists' as const, icon: 'flash' as const, label: 'アシスト' },
+                      { key: 'clears' as const, icon: 'shield' as const, label: 'ブロック' },
+                    ]).map((row) => (
+                      <View key={row.key} style={styles.statRow}>
+                        <View style={styles.statRowLabel}>
+                          <Ionicons name={row.icon} size={16} color={theme.officialBadge} />
+                          <Text style={styles.statRowLabelText}>{row.label}</Text>
+                        </View>
+                        <View style={styles.stepperControls}>
+                          <TouchableOpacity style={styles.stepBtn} onPress={() => adjustStat(pid, row.key, -1)}>
+                            <Ionicons name="remove" size={18} color={theme.primary} />
+                          </TouchableOpacity>
+                          <Text style={styles.stepVal}>{d[row.key]}</Text>
+                          <TouchableOpacity style={styles.stepBtn} onPress={() => adjustStat(pid, row.key, 1)}>
+                            <Ionicons name="add" size={18} color={theme.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+
+                    {/* 出場時間 */}
+                    <View style={styles.subBlock}>
+                      <Text style={styles.subBlockLabel}>出場時間</Text>
+                      <TouchableOpacity style={styles.fullTimeRow} onPress={() => toggleFullTime(pid)}>
+                        <Ionicons
+                          name={d.fullTime ? 'checkbox' : 'square-outline'}
+                          size={22}
+                          color={d.fullTime ? theme.primary : theme.textSecondary}
+                        />
+                        <Text style={styles.fullTimeLabel}>フル出場（前後半とも最後まで）</Text>
+                      </TouchableOpacity>
+
+                      {!d.fullTime && (
+                        <>
+                          {d.intervals.map((iv, i) => (
+                            <View key={i} style={styles.ivCard}>
+                              <View style={styles.ivCardHead}>
+                                <View style={styles.segRow}>
+                                  {([1, 2] as const).map((h) => {
+                                    const on = iv.half === h;
+                                    return (
+                                      <TouchableOpacity
+                                        key={h}
+                                        style={[styles.segBtn, on && styles.segBtnOn]}
+                                        onPress={() => setIntervalField(pid, i, { half: h })}
+                                      >
+                                        <Text style={[styles.segBtnText, on && styles.segBtnTextOn]}>
+                                          {h === 1 ? '前半' : '後半'}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </View>
+                                <TouchableOpacity onPress={() => removeInterval(pid, i)} style={styles.ivRemove}>
+                                  <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
+                                </TouchableOpacity>
+                              </View>
+
+                              <View style={styles.ivBody}>
+                                {/* 開始 */}
+                                <TouchableOpacity
+                                  style={[styles.ivOpt, iv.startKind === 'start' && styles.ivOptOn]}
+                                  onPress={() => setIntervalField(pid, i, { startKind: 'start' })}
+                                >
+                                  <Text style={[styles.ivOptText, iv.startKind === 'start' && styles.ivOptTextOn]}>
+                                    {iv.half === 2 ? '最初から' : 'スタメン'}
+                                  </Text>
+                                </TouchableOpacity>
+                                <View style={styles.ivMinGroup}>
+                                  <TouchableOpacity
+                                    style={[styles.ivOpt, iv.startKind === 'min' && styles.ivOptOn]}
+                                    onPress={() => setIntervalField(pid, i, { startKind: 'min' })}
+                                  >
+                                    <Text style={[styles.ivOptText, iv.startKind === 'min' && styles.ivOptTextOn]}>途中出場</Text>
+                                  </TouchableOpacity>
+                                  {iv.startKind === 'min' && (
+                                    <View style={styles.ivMinWrap}>
+                                      <TextInput
+                                        style={styles.ivMinInput}
+                                        value={iv.startMin}
+                                        onChangeText={(t) => setIntervalField(pid, i, { startMin: t.replace(/[^0-9]/g, '') })}
+                                        keyboardType="number-pad"
+                                        placeholder="0"
+                                        placeholderTextColor={theme.textSecondary}
+                                      />
+                                      <Text style={styles.ivMinUnit}>分</Text>
+                                    </View>
+                                  )}
+                                </View>
+
+                                <Text style={styles.ivTilde}>〜</Text>
+
+                                {/* 終了 */}
+                                <TouchableOpacity
+                                  style={[styles.ivOpt, iv.endKind === 'end' && styles.ivOptOn]}
+                                  onPress={() => setIntervalField(pid, i, { endKind: 'end' })}
+                                >
+                                  <Text style={[styles.ivOptText, iv.endKind === 'end' && styles.ivOptTextOn]}>最後まで</Text>
+                                </TouchableOpacity>
+                                <View style={styles.ivMinGroup}>
+                                  <TouchableOpacity
+                                    style={[styles.ivOpt, iv.endKind === 'min' && styles.ivOptOn]}
+                                    onPress={() => setIntervalField(pid, i, { endKind: 'min' })}
+                                  >
+                                    <Text style={[styles.ivOptText, iv.endKind === 'min' && styles.ivOptTextOn]}>途中で交代</Text>
+                                  </TouchableOpacity>
+                                  {iv.endKind === 'min' && (
+                                    <View style={styles.ivMinWrap}>
+                                      <TextInput
+                                        style={styles.ivMinInput}
+                                        value={iv.endMin}
+                                        onChangeText={(t) => setIntervalField(pid, i, { endMin: t.replace(/[^0-9]/g, '') })}
+                                        keyboardType="number-pad"
+                                        placeholder={String(halfMinutes)}
+                                        placeholderTextColor={theme.textSecondary}
+                                      />
+                                      <Text style={styles.ivMinUnit}>分</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                            </View>
+                          ))}
+                          <TouchableOpacity style={styles.addIntervalBtn} onPress={() => addInterval(pid)}>
+                            <Ionicons name="add-circle-outline" size={16} color={theme.primary} />
+                            <Text style={styles.addIntervalText}>出場区間を追加</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+
+                    {/* メモ */}
+                    <TextInput
+                      style={styles.statNoteInput}
+                      value={d.note}
+                      onChangeText={(t) => updateStatDraft(pid, { note: t })}
+                      placeholder="メモ（任意）例: PK決めた / 後半から出場"
+                      placeholderTextColor={theme.textSecondary}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  </View>
                 );
               })}
             </View>
@@ -711,5 +1050,228 @@ const styles = StyleSheet.create({
   },
   playerChipTextSelected: {
     color: theme.white,
+  },
+  // 1ハーフの長さ ステッパー
+  halfStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  halfStepBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  halfStepValue: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: theme.text,
+    minWidth: 56,
+    textAlign: 'center',
+  },
+  halfStepHint: {
+    fontSize: fontSize.sm,
+    color: theme.textSecondary,
+  },
+  // 選手スタッツ編集
+  statsCard: {
+    backgroundColor: theme.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+  },
+  statEditBlock: {
+    paddingBottom: spacing.md,
+    marginBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  statPlayerName: {
+    fontSize: fontSize.md,
+    color: theme.text,
+    marginBottom: spacing.sm,
+  },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  statRowLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  statRowLabelText: {
+    fontSize: fontSize.md,
+    color: theme.text,
+  },
+  stepperControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  stepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepVal: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: theme.text,
+    minWidth: 28,
+    textAlign: 'center',
+  },
+  subBlock: {
+    marginTop: spacing.sm,
+  },
+  subBlockLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: theme.text,
+    marginBottom: spacing.xs,
+  },
+  fullTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  fullTimeLabel: {
+    fontSize: fontSize.sm,
+    color: theme.text,
+  },
+  ivCard: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    backgroundColor: theme.white,
+  },
+  ivCardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  segRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  segBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+  },
+  segBtnOn: {
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
+  },
+  segBtnText: {
+    fontSize: fontSize.sm,
+    color: theme.text,
+  },
+  segBtnTextOn: {
+    color: theme.white,
+    fontWeight: '700',
+  },
+  ivRemove: {
+    padding: 2,
+  },
+  ivBody: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  ivMinGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  ivOpt: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+  },
+  ivOptOn: {
+    backgroundColor: '#E8F5E9',
+    borderColor: theme.primary,
+  },
+  ivOptText: {
+    fontSize: fontSize.sm,
+    color: theme.text,
+  },
+  ivOptTextOn: {
+    color: theme.primary,
+    fontWeight: '700',
+  },
+  ivMinWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  ivMinInput: {
+    width: 48,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm - 3,
+    fontSize: fontSize.sm,
+    color: theme.text,
+    backgroundColor: theme.white,
+    textAlign: 'center',
+  },
+  ivMinUnit: {
+    fontSize: fontSize.sm,
+    color: theme.textSecondary,
+  },
+  ivTilde: {
+    fontSize: fontSize.sm,
+    color: theme.textSecondary,
+    marginHorizontal: 2,
+  },
+  addIntervalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  addIntervalText: {
+    fontSize: fontSize.sm,
+    color: theme.primary,
+    fontWeight: '600',
+  },
+  statNoteInput: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    fontSize: fontSize.sm,
+    color: theme.text,
+    backgroundColor: theme.white,
+    marginTop: spacing.sm,
+    minHeight: 64,
+    textAlign: 'left',
   },
 });

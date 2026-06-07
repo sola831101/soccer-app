@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: 'サカログ',
     slug: 'soccer-app',
-    version: '1.1.1',
+    version: '1.1.2',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.soccerapp.manager',
-      buildNumber: '32',
+      buildNumber: '33',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSUserTrackingUsageDescription:
@@ -30,7 +30,7 @@ module.exports = {
         monochromeImage: './assets/android-icon-monochrome.png',
       },
       package: 'com.soccerapp.manager',
-      versionCode: 8,
+      versionCode: 9,
     },
     web: {
       favicon: './assets/favicon.png',
