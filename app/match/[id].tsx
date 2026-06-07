@@ -612,15 +612,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 18,
   },
-  readTag: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: borderRadius.full,
-  },
-  readTagGood: { backgroundColor: '#E8F5E9' },
-  readTagGoodText: { fontSize: 11, fontWeight: '700', color: '#2E7D32' },
-  readTagImprove: { backgroundColor: '#FFF3E0' },
-  readTagImproveText: { fontSize: 11, fontWeight: '700', color: '#E65100' },
   statsEmptyHint: {
     fontSize: fontSize.xs,
     color: theme.textSecondary,
@@ -639,11 +630,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     flexShrink: 1,
-  },
-  tagWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
   },
 });
