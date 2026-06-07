@@ -13,7 +13,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { PurchasesPackage } from '../lib/purchases';
 import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
-import { getOfferings, purchasePackage, restorePurchases, isPremiumCustomer } from '../lib/purchases';
+import {
+  getOfferings,
+  purchasePackage,
+  restorePurchases,
+  isPremiumCustomer,
+  getPackagePeriod,
+  getPackagePriceString,
+  getPackagePrice,
+  getFreeTrialDays,
+} from '../lib/purchases';
 import { useTeam } from '../lib/context/TeamContext';
 
 const PRIVACY_POLICY_URL = 'https://sola831101.github.io/soccer-app/privacy-policy.html';
@@ -31,6 +40,7 @@ interface UpgradeModalProps {
 // 無料 vs ファミリーの比較。値は lib/plans.ts の PLAN_LIMITS と一致させること。
 const COMPARE_ROWS: { label: string; free: string; family: string; highlight?: boolean }[] = [
   { label: '試合の記録',     free: '月5件',   family: '無制限', highlight: true },
+  { label: '選手スタッツ',   free: '×',       family: '○',      highlight: true },
   { label: '試合の写真',     free: '1枚/試合', family: '20枚/試合', highlight: true },
   { label: '広告',           free: 'あり',    family: 'なし',   highlight: true },
   { label: '子どもの顔写真', free: '×',       family: '○',      highlight: true },
@@ -43,9 +53,13 @@ const COMPARE_ROWS: { label: string; free: string; family: string; highlight?: b
 
 export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof }: UpgradeModalProps) {
   const { syncPurchaseState, team, user } = useTeam();
-  const [pkg, setPkg] = useState<PurchasesPackage | null>(null);
+  const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingOfferings, setLoadingOfferings] = useState(true);
+
+  const selectedPkg = packages.find((p) => p.identifier === selectedId) ?? null;
+  const selectedTrialDays = selectedPkg ? getFreeTrialDays(selectedPkg) : null;
 
   // オーナー判定: メンバーが購入してもFirestoreルールでplan更新が拒否される（permission-denied）。
   // 課金は成立するのに機能反映されない事故を防ぐため、購入フロー自体をオーナー限定にする。
@@ -57,17 +71,26 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
     if (!visible) return;
     setLoadingOfferings(true);
     getOfferings().then((offering) => {
-      const pkgs = offering?.availablePackages ?? [];
-      if (pkgs.length > 0) setPkg(pkgs[0]);
+      const pkgs: PurchasesPackage[] = offering?.availablePackages ?? [];
+      // 年額を先頭（おすすめ）、次に月額、その他の順で並べる
+      const order = (p: PurchasesPackage) => {
+        const period = getPackagePeriod(p);
+        return period === 'year' ? 0 : period === 'month' ? 1 : 2;
+      };
+      const sorted = [...pkgs].sort((a, b) => order(a) - order(b));
+      setPackages(sorted);
+      // デフォルトは年額（あれば）、無ければ先頭
+      const annual = sorted.find((p) => getPackagePeriod(p) === 'year');
+      setSelectedId((annual ?? sorted[0])?.identifier ?? null);
       setLoadingOfferings(false);
     });
   }, [visible]);
 
   const handlePurchase = async () => {
-    if (!pkg) return;
+    if (!selectedPkg) return;
     setLoading(true);
     try {
-      await purchasePackage(pkg);
+      await purchasePackage(selectedPkg);
       // purchasePackage はキャンセル・失敗時に例外を投げるため、ここに到達 = 購入成功
       await syncPurchaseState('family');
       Alert.alert('購入完了', 'ファミリープランへようこそ！', [
@@ -135,8 +158,62 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
           {/* 3. 訴求：星マーク＋ファミリープラン */}
           <Ionicons name="star" size={40} color="#4CAF50" style={styles.icon} />
           <Text style={styles.title}>ファミリープラン</Text>
-          <Text style={styles.price}>¥300 / 月</Text>
-          <Text style={styles.valueNote}>1日あたり約10円。広告なしで、子どもの成長をずっと残せます。</Text>
+          <Text style={styles.valueNote}>広告なしで、子どもの成長をずっと残せます。</Text>
+
+          {/* プラン選択（年額／月額） */}
+          {packages.length > 0 && (
+            <View style={styles.planOptions}>
+              {packages.map((p) => {
+                const period = getPackagePeriod(p);
+                const isAnnual = period === 'year';
+                const selected = p.identifier === selectedId;
+                const trialDays = getFreeTrialDays(p);
+                // 年額の割引率（月額が取れる場合のみ）
+                let saveText: string | null = null;
+                if (isAnnual) {
+                  const monthly = packages.find((q) => getPackagePeriod(q) === 'month');
+                  const aPrice = getPackagePrice(p);
+                  const mPrice = monthly ? getPackagePrice(monthly) : 0;
+                  if (aPrice > 0 && mPrice > 0) {
+                    const pct = Math.round((1 - aPrice / (mPrice * 12)) * 100);
+                    if (pct > 0) saveText = `月額より約${pct}%おトク`;
+                  }
+                }
+                return (
+                  <TouchableOpacity
+                    key={p.identifier}
+                    style={[styles.planOption, selected && styles.planOptionSelected]}
+                    onPress={() => setSelectedId(p.identifier)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.radioOuter}>
+                      {selected && <View style={styles.radioInner} />}
+                    </View>
+                    <View style={styles.planOptionMain}>
+                      <View style={styles.planOptionTitleRow}>
+                        <Text style={styles.planOptionTitle}>{isAnnual ? '年額プラン' : '月額プラン'}</Text>
+                        {isAnnual && (
+                          <View style={styles.recommendBadge}>
+                            <Text style={styles.recommendBadgeText}>おすすめ</Text>
+                          </View>
+                        )}
+                        {trialDays != null && (
+                          <View style={styles.trialBadge}>
+                            <Text style={styles.trialBadgeText}>{trialDays}日間無料</Text>
+                          </View>
+                        )}
+                      </View>
+                      {!!saveText && <Text style={styles.planOptionSub}>{saveText}</Text>}
+                    </View>
+                    <View style={styles.planOptionPriceWrap}>
+                      <Text style={styles.planOptionPrice}>{getPackagePriceString(p)}</Text>
+                      <Text style={styles.planOptionPeriod}>/{isAnnual ? '年' : '月'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
           <View style={styles.compareCard}>
             <View style={styles.compareHeadRow}>
@@ -176,8 +253,12 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
               </TouchableOpacity>
 
               <Text style={styles.note}>
-                App Storeで購入処理が行われます。いつでもキャンセル可能です。{'\n'}
-                サブスクリプション名：サカログ ファミリープラン（月額）
+                {selectedPkg
+                  ? selectedTrialDays != null
+                    ? `${selectedTrialDays}日間の無料トライアル後、${getPackagePriceString(selectedPkg)}／${getPackagePeriod(selectedPkg) === 'year' ? '年' : '月'}で自動更新されます。期間中にキャンセルすれば料金はかかりません。`
+                    : `${getPackagePriceString(selectedPkg)}／${getPackagePeriod(selectedPkg) === 'year' ? '年' : '月'}で自動更新されます。いつでもキャンセルできます。`
+                  : 'App Storeで購入処理が行われます。いつでもキャンセル可能です。'}
+                {'\n'}解約しない限り自動更新され、料金はApp Storeアカウントに請求されます。
               </Text>
 
               <View style={styles.legalLinks}>
@@ -206,16 +287,18 @@ export function UpgradeModal({ visible, onClose, onUpgrade, reason, socialProof 
           <View style={styles.footer}>
             {isAdmin ? (
               <TouchableOpacity
-                style={[styles.purchaseButton, styles.footerButton, (loading || loadingOfferings || !pkg) && { opacity: 0.6 }]}
+                style={[styles.purchaseButton, styles.footerButton, (loading || loadingOfferings || !selectedPkg) && { opacity: 0.6 }]}
                 onPress={handlePurchase}
-                disabled={loading || loadingOfferings || !pkg}
+                disabled={loading || loadingOfferings || !selectedPkg}
               >
                 {loading ? (
                   <ActivityIndicator color={theme.white} />
                 ) : (
                   <>
                     <Ionicons name="star" size={18} color={theme.white} />
-                    <Text style={styles.purchaseButtonText}>ファミリープランに変更する</Text>
+                    <Text style={styles.purchaseButtonText}>
+                      {selectedTrialDays != null ? `${selectedTrialDays}日間無料ではじめる` : 'ファミリープランに変更する'}
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -261,6 +344,100 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  planOptions: {
+    width: '100%',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  planOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    backgroundColor: theme.white,
+  },
+  planOptionSelected: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#F1F8E9',
+  },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#4CAF50',
+  },
+  planOptionMain: {
+    flex: 1,
+  },
+  planOptionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  planOptionTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: theme.text,
+  },
+  recommendBadge: {
+    backgroundColor: '#4CAF50',
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+  },
+  recommendBadgeText: {
+    color: theme.white,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  trialBadge: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: '#FFCC80',
+  },
+  trialBadgeText: {
+    color: '#E65100',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  planOptionSub: {
+    fontSize: fontSize.xs,
+    color: '#2E7D32',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  planOptionPriceWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginLeft: spacing.sm,
+  },
+  planOptionPrice: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: theme.text,
+  },
+  planOptionPeriod: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    marginLeft: 1,
   },
   emotionCard: {
     flexDirection: 'row',

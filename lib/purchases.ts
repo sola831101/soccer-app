@@ -75,6 +75,39 @@ export async function restorePurchases(): Promise<CustomerInfo> {
   return customerInfo;
 }
 
+// ---- パッケージ表示用ヘルパー（RevenueCat の型は any 扱いのため集約）----
+
+export type PackagePeriod = 'year' | 'month' | 'other';
+
+export function getPackagePeriod(pkg: PurchasesPackage): PackagePeriod {
+  const t = pkg?.packageType;
+  if (t === 'ANNUAL') return 'year';
+  if (t === 'MONTHLY') return 'month';
+  return 'other';
+}
+
+export function getPackagePriceString(pkg: PurchasesPackage): string {
+  return pkg?.product?.priceString ?? '';
+}
+
+export function getPackagePrice(pkg: PurchasesPackage): number {
+  const p = pkg?.product?.price;
+  return typeof p === 'number' ? p : 0;
+}
+
+// 無料トライアルの日数を返す（無料トライアルが無い/有料イントロの場合は null）
+export function getFreeTrialDays(pkg: PurchasesPackage): number | null {
+  const ip = pkg?.product?.introPrice;
+  if (!ip) return null;
+  // 価格0のイントロ＝無料トライアルのみ対象
+  if (Number(ip.price) !== 0) return null;
+  const unit = ip.periodUnit; // 'DAY' | 'WEEK' | 'MONTH' | 'YEAR'
+  const n = ip.periodNumberOfUnits ?? 0;
+  const mult = unit === 'DAY' ? 1 : unit === 'WEEK' ? 7 : unit === 'MONTH' ? 30 : unit === 'YEAR' ? 365 : 0;
+  const days = n * mult;
+  return days > 0 ? days : null;
+}
+
 // 同期処理用のrestorePurchases。失敗時はnullを返す（getCustomerInfo と同じインターフェース）。
 // getCustomerInfo() と違い、Apple Receipt を再検証して RevenueCat 側の appUserID と
 // 紐づけ直すため、UID不一致で entitlement が見えていないケースを救える。
