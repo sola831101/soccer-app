@@ -177,7 +177,10 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
       const v = statsDraft[pid];
       if (!v) continue;
       let intervals: PlayInterval[] = [];
-      if (v.fullTime) {
+      if (noResult) {
+        // 勝敗を記録しない試合は出場時間を扱わない
+        intervals = [];
+      } else if (v.fullTime) {
         // フル出場：前後半なら前半+後半、1本なら1区間
         intervals = periodFormat === 'single'
           ? [{ half: 1, start: 'start', end: 'end' }]
@@ -599,44 +602,47 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
           </>
         )}
 
-        {/* 試合形式 */}
-        <Text style={styles.label}>試合形式</Text>
-        <View style={styles.segmentRow}>
-          {([
-            { key: 'halves', label: '前後半' },
-            { key: 'single', label: '1本（単一ピリオド）' },
-          ] as const).map((f) => {
-            const on = periodFormat === f.key;
-            return (
-              <TouchableOpacity
-                key={f.key}
-                style={[styles.segment, on && styles.segmentActiveGreen]}
-                onPress={() => setPeriodFormat(f.key)}
-              >
-                <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{f.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {/* 試合形式・長さ（勝敗を記録しない試合では不要なので非表示） */}
+        {!noResult && (
+          <>
+            <Text style={styles.label}>試合形式</Text>
+            <View style={styles.segmentRow}>
+              {([
+                { key: 'halves', label: '前後半' },
+                { key: 'single', label: '1本（単一ピリオド）' },
+              ] as const).map((f) => {
+                const on = periodFormat === f.key;
+                return (
+                  <TouchableOpacity
+                    key={f.key}
+                    style={[styles.segment, on && styles.segmentActiveGreen]}
+                    onPress={() => setPeriodFormat(f.key)}
+                  >
+                    <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{f.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-        {/* 1ハーフ/1本の長さ */}
-        <Text style={styles.label}>{periodFormat === 'single' ? '試合時間' : '1ハーフの長さ'}</Text>
-        <View style={styles.halfStepRow}>
-          <TouchableOpacity
-            style={styles.halfStepBtn}
-            onPress={() => setHalfMinutes((v) => Math.max(HALF_MIN, v - 1))}
-          >
-            <Ionicons name="remove" size={20} color={theme.primary} />
-          </TouchableOpacity>
-          <Text style={styles.halfStepValue}>{halfMinutes}分</Text>
-          <TouchableOpacity
-            style={styles.halfStepBtn}
-            onPress={() => setHalfMinutes((v) => Math.min(HALF_MAX, v + 1))}
-          >
-            <Ionicons name="add" size={20} color={theme.primary} />
-          </TouchableOpacity>
-          {periodFormat !== 'single' && <Text style={styles.halfStepHint}>ハーフ</Text>}
-        </View>
+            <Text style={styles.label}>{periodFormat === 'single' ? '試合時間' : '1ハーフの長さ'}</Text>
+            <View style={styles.halfStepRow}>
+              <TouchableOpacity
+                style={styles.halfStepBtn}
+                onPress={() => setHalfMinutes((v) => Math.max(HALF_MIN, v - 1))}
+              >
+                <Ionicons name="remove" size={20} color={theme.primary} />
+              </TouchableOpacity>
+              <Text style={styles.halfStepValue}>{halfMinutes}分</Text>
+              <TouchableOpacity
+                style={styles.halfStepBtn}
+                onPress={() => setHalfMinutes((v) => Math.min(HALF_MAX, v + 1))}
+              >
+                <Ionicons name="add" size={20} color={theme.primary} />
+              </TouchableOpacity>
+              {periodFormat !== 'single' && <Text style={styles.halfStepHint}>ハーフ</Text>}
+            </View>
+          </>
+        )}
 
         {/* 出場選手 */}
         {players.length > 0 && (
@@ -699,7 +705,8 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
                       </View>
                     ))}
 
-                    {/* 出場時間 */}
+                    {/* 出場時間（勝敗を記録しない試合では非表示） */}
+                    {!noResult && (
                     <View style={styles.subBlock}>
                       <Text style={styles.subBlockLabel}>出場時間</Text>
                       <TouchableOpacity style={styles.fullTimeRow} onPress={() => toggleFullTime(pid)}>
@@ -815,6 +822,7 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
                         </>
                       )}
                     </View>
+                    )}
 
                     {/* メモ */}
                     <TextInput
