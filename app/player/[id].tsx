@@ -591,6 +591,15 @@ export default function PlayerDetailScreen() {
                       <Text style={styles.moreStatsCell}>{playerSplit.official.assists}</Text>
                       <Text style={styles.moreStatsCell}>{playerSplit.official.clears}</Text>
                     </View>
+                    {playerSplit.subOfficial.matches > 0 && (
+                      <View style={styles.moreStatsDataRow}>
+                        <Text style={[styles.moreStatsCell, styles.moreStatsCellLabel]}>サブ公式戦</Text>
+                        <Text style={styles.moreStatsCell}>{playerSplit.subOfficial.matches}</Text>
+                        <Text style={styles.moreStatsCell}>{playerSplit.subOfficial.goals}</Text>
+                        <Text style={styles.moreStatsCell}>{playerSplit.subOfficial.assists}</Text>
+                        <Text style={styles.moreStatsCell}>{playerSplit.subOfficial.clears}</Text>
+                      </View>
+                    )}
                     <View style={styles.moreStatsDataRow}>
                       <Text style={[styles.moreStatsCell, styles.moreStatsCellLabel]}>練習試合</Text>
                       <Text style={styles.moreStatsCell}>{playerSplit.practice.matches}</Text>

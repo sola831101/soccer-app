@@ -271,17 +271,18 @@ export function computePlayerTotals(
 }
 
 /**
- * 1選手の公式戦／練習試合の内訳累計。
+ * 1選手の公式戦／サブ公式戦／練習試合の内訳累計。
  */
 export function computePlayerSplit(
   matches: Match[],
   playerId: string,
   fiscalYear?: number
-): { official: PlayerTotals; practice: PlayerTotals } {
+): { official: PlayerTotals; subOfficial: PlayerTotals; practice: PlayerTotals } {
   const filtered = playerMatches(matches, playerId, fiscalYear);
   return {
     official: sumPlayerStats(filtered.filter((m) => m.matchType === 'official'), playerId),
-    practice: sumPlayerStats(filtered.filter((m) => m.matchType !== 'official'), playerId),
+    subOfficial: sumPlayerStats(filtered.filter((m) => m.matchType === 'sub_official'), playerId),
+    practice: sumPlayerStats(filtered.filter((m) => m.matchType === 'practice'), playerId),
   };
 }
 

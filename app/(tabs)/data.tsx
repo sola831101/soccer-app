@@ -208,6 +208,22 @@ export default function DataScreen() {
               </View>
             )}
 
+            {/* サブ公式戦 */}
+            {stats.subOfficialMatches > 0 && (
+              <View style={styles.breakdownSection}>
+                <View style={styles.breakdownHeader}>
+                  <View style={[styles.badge, { backgroundColor: theme.subOfficialBadge }]}>
+                    <Text style={styles.badgeText}>サブ公式戦</Text>
+                  </View>
+                  <Text style={styles.breakdownCount}>{stats.subOfficialMatches}試合</Text>
+                </View>
+                <Text style={styles.breakdownDetail}>
+                  {stats.subOfficialWins}勝 {stats.subOfficialLosses}敗 {stats.subOfficialDraws}分{'  '}|{'  '}
+                  得点 {stats.subOfficialGoalsScored} - 失点 {stats.subOfficialGoalsConceded}
+                </Text>
+              </View>
+            )}
+
             {/* 練習試合 */}
             {stats.practiceMatches > 0 && (
               <View style={styles.breakdownSection}>
