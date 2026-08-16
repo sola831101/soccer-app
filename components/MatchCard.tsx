@@ -34,7 +34,8 @@ export function MatchCard({ match, onPress, players = [], dateFormat = 'datetime
   const date = match.date.toDate();
   const hasScore = match.scoreHome != null && match.scoreAway != null;
   const now = new Date();
-  const needsResult = date < now && !hasScore;
+  // 勝敗を記録しない試合は「結果未入力」扱いにしない
+  const needsResult = date < now && !hasScore && !match.noResult;
 
   const matchPlayers = (match.playerIds ?? [])
     .map((id) => players.find((p) => p.id === id))
@@ -65,11 +66,16 @@ export function MatchCard({ match, onPress, players = [], dateFormat = 'datetime
           <Text style={styles.opponent}>{match.opponent}</Text>
         </View>
 
-        {hasScore && (
+        {(hasScore || match.noResult) && (
           <ScoreDisplay
             scoreHome={match.scoreHome}
             scoreAway={match.scoreAway}
             result={match.result}
+            etHome={match.etHome}
+            etAway={match.etAway}
+            pkHome={match.pkHome}
+            pkAway={match.pkAway}
+            noResult={match.noResult}
           />
         )}
       </View>

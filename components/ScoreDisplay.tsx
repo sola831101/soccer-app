@@ -7,6 +7,11 @@ interface Props {
   scoreHome: number | null;
   scoreAway: number | null;
   result?: MatchResult | null;
+  etHome?: number | null;
+  etAway?: number | null;
+  pkHome?: number | null;
+  pkAway?: number | null;
+  noResult?: boolean;
   size?: 'small' | 'large';
 }
 
@@ -22,16 +27,32 @@ const resultColor: Record<string, string> = {
   draw: theme.draw,
 };
 
-export function ScoreDisplay({ scoreHome, scoreAway, result, size = 'small' }: Props) {
+export function ScoreDisplay({
+  scoreHome, scoreAway, result,
+  etHome, etAway, pkHome, pkAway, noResult,
+  size = 'small',
+}: Props) {
+  const isLarge = size === 'large';
+
+  // 勝敗を記録しない試合
+  if (noResult) {
+    return (
+      <Text style={[styles.pending, isLarge && styles.pendingLarge]}>記録なし</Text>
+    );
+  }
+
   if (scoreHome == null || scoreAway == null) {
     return (
-      <Text style={[styles.pending, size === 'large' && styles.pendingLarge]}>
+      <Text style={[styles.pending, isLarge && styles.pendingLarge]}>
         - : -
       </Text>
     );
   }
 
-  const isLarge = size === 'large';
+  // 延長・PKの補足行
+  const extras: string[] = [];
+  if (etHome != null && etAway != null) extras.push(`延長 ${etHome}-${etAway}`);
+  if (pkHome != null && pkAway != null) extras.push(`PK ${pkHome}-${pkAway}`);
 
   return (
     <View style={styles.container}>
@@ -46,6 +67,9 @@ export function ScoreDisplay({ scoreHome, scoreAway, result, size = 'small' }: P
           {scoreAway}
         </Text>
       </View>
+      {extras.length > 0 && (
+        <Text style={styles.extra}>{extras.join(' ／ ')}</Text>
+      )}
       {result && (
         <Text style={[styles.result, { color: resultColor[result] }]}>
           {resultLabel[result]}
@@ -95,5 +119,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '700',
     marginTop: spacing.xs,
+  },
+  extra: {
+    fontSize: fontSize.xs,
+    color: theme.textSecondary,
+    fontWeight: '600',
+    marginTop: 2,
   },
 });

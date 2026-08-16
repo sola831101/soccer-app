@@ -9,11 +9,14 @@ interface Props {
 }
 
 export function MatchTypeBadge({ type, competitionName }: Props) {
-  const isOfficial = type === 'official';
-  const label = isOfficial
-    ? competitionName || '公式戦'
+  const label =
+    type === 'official' ? (competitionName || '公式戦')
+    : type === 'sub_official' ? (competitionName || 'サブ公式戦')
     : '練習試合';
-  const bgColor = isOfficial ? theme.officialBadge : theme.practiceBadge;
+  const bgColor =
+    type === 'official' ? theme.officialBadge
+    : type === 'sub_official' ? theme.subOfficialBadge
+    : theme.practiceBadge;
 
   return (
     <View style={[styles.badge, { backgroundColor: bgColor }]}>

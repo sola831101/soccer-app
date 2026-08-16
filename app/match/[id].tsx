@@ -41,16 +41,19 @@ function formatFullDate(date: Date): string {
 }
 
 // 保存済み区間を表示用テキストへ（前半フル / 後半5分〜終了 など）
-function formatInterval(iv: PlayInterval): string {
+function formatInterval(iv: PlayInterval, single = false): string {
   // 旧形式
   if (iv.half == null && (iv.in != null || iv.out != null)) {
     return `${iv.in ?? 0}〜${iv.out ?? 0}分`;
   }
-  const halfLabel = iv.half === 2 ? '後半' : '前半';
   const full = (iv.start === 'start' || iv.start == null) && (iv.end === 'end' || iv.end == null);
-  if (full) return `${halfLabel}フル`;
   const startTxt = iv.start === 'start' || iv.start == null ? '開始' : `${iv.start}分`;
   const endTxt = iv.end === 'end' || iv.end == null ? '終了' : `${iv.end}分`;
+  if (single) {
+    return full ? 'フル出場' : `${startTxt}〜${endTxt}`;
+  }
+  const halfLabel = iv.half === 2 ? '後半' : '前半';
+  if (full) return `${halfLabel}フル`;
   return `${halfLabel} ${startTxt}〜${endTxt}`;
 }
 
@@ -219,6 +222,11 @@ export default function MatchDetailScreen() {
             scoreHome={match.scoreHome}
             scoreAway={match.scoreAway}
             result={match.result}
+            etHome={match.etHome}
+            etAway={match.etAway}
+            pkHome={match.pkHome}
+            pkAway={match.pkAway}
+            noResult={match.noResult}
             size="large"
           />
           <View style={styles.teamColumn}>
@@ -272,7 +280,7 @@ export default function MatchDetailScreen() {
                   const ivs = s?.intervals ?? [];
                   const matchHalf = match.halfMinutes ?? DEFAULT_HALF_MINUTES;
                   const minutes = ivs.reduce((sum, iv) => sum + intervalMinutes(iv, matchHalf), 0);
-                  const ivLabel = ivs.map((iv) => formatInterval(iv)).join(' / ');
+                  const ivLabel = ivs.map((iv) => formatInterval(iv, match.periodFormat === 'single')).join(' / ');
                   return (
                     <View
                       key={pid}
