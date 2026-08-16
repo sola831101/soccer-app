@@ -153,6 +153,12 @@ export default function MatchDetailScreen() {
   };
 
   const playerIds = match.playerIds ?? [];
+  // 動画URL（新: youtubeUrls配列／旧: youtubeUrl単一 の両対応）
+  const videoUrls = match.youtubeUrls?.length
+    ? match.youtubeUrls
+    : match.youtubeUrl
+      ? [match.youtubeUrl]
+      : [];
 
   if (editing) {
     return (
@@ -185,6 +191,7 @@ export default function MatchDetailScreen() {
             periodFormat: match.periodFormat,
             notes: match.notes,
             youtubeUrl: match.youtubeUrl,
+            youtubeUrls: match.youtubeUrls,
             status: match.status,
             halfMinutes: match.halfMinutes,
             playerIds: match.playerIds ?? [],
@@ -326,11 +333,15 @@ export default function MatchDetailScreen() {
           </View>
         )}
 
-        {/* 動画 */}
-        {match.youtubeUrl ? (
+        {/* 動画（複数可） */}
+        {videoUrls.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>動画</Text>
-            <YouTubePlayer url={match.youtubeUrl} />
+            {videoUrls.map((url, i) => (
+              <View key={i} style={i > 0 ? { marginTop: spacing.md } : undefined}>
+                <YouTubePlayer url={url} />
+              </View>
+            ))}
           </View>
         ) : (
           <AdBanner rectangle />

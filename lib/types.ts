@@ -63,7 +63,8 @@ export interface Match {
   noResult?: boolean;
   periodFormat?: PeriodFormat; // 未設定＝halves（前後半）で互換
   notes?: string;
-  youtubeUrl?: string;
+  youtubeUrl?: string;    // 後方互換（旧・単一URL）。新規はyoutubeUrls[0]も併せて書く
+  youtubeUrls?: string[]; // 動画URL（複数可）
   status: MatchStatus;
   halfMinutes?: number;  // 1ハーフ/1本の長さ（分）。出場時間の「最後まで」計算に使用。未設定時は既定値
   playerIds?: string[];  // 出場予定・出場した選手
@@ -89,7 +90,8 @@ export interface MatchFormData {
   noResult?: boolean;
   periodFormat?: PeriodFormat;
   notes?: string;
-  youtubeUrl?: string;
+  youtubeUrl?: string;    // 後方互換（旧・単一URL）。新規はyoutubeUrls[0]も併せて書く
+  youtubeUrls?: string[]; // 動画URL（複数可）
   status: MatchStatus;
   halfMinutes?: number;  // 1ハーフ/1本の長さ（分）
   playerIds?: string[];  // 出場予定・出場した選手

@@ -112,7 +112,19 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
   const [scoreHome, setScoreHome] = useState(initialData?.scoreHome?.toString() || '');
   const [scoreAway, setScoreAway] = useState(initialData?.scoreAway?.toString() || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
-  const [youtubeUrl, setYoutubeUrl] = useState(initialData?.youtubeUrl || '');
+  const [youtubeUrls, setYoutubeUrls] = useState<string[]>(() => {
+    const arr = initialData?.youtubeUrls?.length
+      ? initialData.youtubeUrls
+      : initialData?.youtubeUrl
+        ? [initialData.youtubeUrl]
+        : [];
+    return arr.length ? [...arr] : ['']; // デフォルトは空欄1つ
+  });
+  const setUrlAt = (i: number, val: string) =>
+    setYoutubeUrls((prev) => prev.map((u, idx) => (idx === i ? val : u)));
+  const addUrl = () => setYoutubeUrls((prev) => [...prev, '']);
+  const removeUrl = (i: number) =>
+    setYoutubeUrls((prev) => (prev.length <= 1 ? [''] : prev.filter((_, idx) => idx !== i)));
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(initialData?.playerIds ?? []);
   const [halfMinutes, setHalfMinutes] = useState<number>(initialData?.halfMinutes ?? HALF_DEFAULT);
   const [periodFormat, setPeriodFormat] = useState<PeriodFormat>(initialData?.periodFormat ?? 'halves');
@@ -273,7 +285,7 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
       noResult,
       periodFormat,
       notes: notes.trim() || undefined,
-      youtubeUrl: youtubeUrl.trim() || undefined,
+      youtubeUrls: youtubeUrls.map((u) => u.trim()).filter(Boolean),
       status,
       halfMinutes,
       playerIds: selectedPlayerIds,
@@ -453,7 +465,10 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
               <TouchableOpacity
                 key={seg.key}
                 style={[styles.segment, on && seg.active]}
-                onPress={() => setMatchType(seg.key)}
+                onPress={() => {
+                  setMatchType(seg.key);
+                  if (seg.key !== 'practice') setNoResult(false); // 勝敗なしは練習試合のみ
+                }}
               >
                 <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{seg.label}</Text>
               </TouchableOpacity>
@@ -491,14 +506,17 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
         {status === 'completed' && (
           <>
             <Text style={styles.label}>スコア・結果</Text>
-            <TouchableOpacity style={styles.checkboxRow} onPress={() => setNoResult((v) => !v)}>
-              <Ionicons
-                name={noResult ? 'checkbox' : 'square-outline'}
-                size={22}
-                color={noResult ? theme.primary : theme.textSecondary}
-              />
-              <Text style={styles.checkboxLabel}>勝敗を記録しない（スコアなしで登録）</Text>
-            </TouchableOpacity>
+            {/* 勝敗を記録しない：練習試合のみ */}
+            {matchType === 'practice' && (
+              <TouchableOpacity style={styles.checkboxRow} onPress={() => setNoResult((v) => !v)}>
+                <Ionicons
+                  name={noResult ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={noResult ? theme.primary : theme.textSecondary}
+                />
+                <Text style={styles.checkboxLabel}>勝敗を記録しない（スコアなしで登録）</Text>
+              </TouchableOpacity>
+            )}
 
             {!noResult && (
               <>
@@ -841,17 +859,30 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
           </>
         )}
 
-        {/* YouTube URL */}
+        {/* YouTube URL（複数可） */}
         <Text style={styles.label}>YouTube URL</Text>
-        <TextInput
-          style={styles.input}
-          value={youtubeUrl}
-          onChangeText={setYoutubeUrl}
-          placeholder="https://youtube.com/watch?v=..."
-          placeholderTextColor={theme.textSecondary}
-          autoCapitalize="none"
-          keyboardType="url"
-        />
+        {youtubeUrls.map((url, i) => (
+          <View key={i} style={styles.urlRow}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={url}
+              onChangeText={(t) => setUrlAt(i, t)}
+              placeholder="https://youtube.com/watch?v=..."
+              placeholderTextColor={theme.textSecondary}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+            {youtubeUrls.length > 1 && (
+              <TouchableOpacity onPress={() => removeUrl(i)} style={styles.urlRemove}>
+                <Ionicons name="close-circle" size={22} color={theme.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+        <TouchableOpacity style={styles.addUrlBtn} onPress={addUrl}>
+          <Ionicons name="add-circle-outline" size={16} color={theme.primary} />
+          <Text style={styles.addUrlText}>動画URLを追加</Text>
+        </TouchableOpacity>
 
         {/* メモ */}
         <Text style={styles.label}>メモ</Text>
@@ -952,6 +983,27 @@ const styles = StyleSheet.create({
   },
   textArea: {
     minHeight: 100,
+  },
+  urlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  urlRemove: {
+    padding: 2,
+  },
+  addUrlBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  addUrlText: {
+    fontSize: fontSize.sm,
+    color: theme.primary,
+    fontWeight: '600',
   },
   dateRow: {
     flexDirection: 'row',

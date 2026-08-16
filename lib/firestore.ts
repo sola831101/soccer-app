@@ -146,7 +146,8 @@ function buildMatchData(data: MatchFormData) {
     periodFormat: data.periodFormat ?? 'halves',
     result: computeResult(data),
     notes: data.notes || null,
-    youtubeUrl: data.youtubeUrl || null,
+    youtubeUrls: data.youtubeUrls ?? [],
+    youtubeUrl: data.youtubeUrls?.[0] || data.youtubeUrl || null, // 旧アプリ互換：先頭URL
     status: data.status,
     halfMinutes: data.halfMinutes ?? 15,
     playerIds: data.playerIds ?? [],
