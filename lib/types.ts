@@ -1,8 +1,11 @@
 import { Timestamp } from 'firebase/firestore';
 
-export type MatchType = 'practice' | 'official';
+// 試合ジャンル。official=公式戦 / sub_official=サブ公式戦（1Dayカップ・他チーム主催大会等） / practice=練習試合
+export type MatchType = 'practice' | 'official' | 'sub_official';
 export type MatchResult = 'win' | 'loss' | 'draw';
 export type MatchStatus = 'upcoming' | 'completed';
+// 試合形式。halves=前後半 / single=1本（単一ピリオド：15分1本など）
+export type PeriodFormat = 'halves' | 'single';
 export type Plan = 'free' | 'family';
 
 export interface Team {
@@ -50,10 +53,19 @@ export interface Match {
   scoreHome: number | null;
   scoreAway: number | null;
   result: MatchResult | null;
+  // 延長戦スコア（任意）。得失点集計には通常＋延長を使う（PKは含めない）
+  etHome?: number | null;
+  etAway?: number | null;
+  // PK戦スコア（任意）。同点時の勝敗判定に使うが得失点には含めない
+  pkHome?: number | null;
+  pkAway?: number | null;
+  // 勝敗を記録しない試合（練習試合等）。true なら勝率・得失点から除外、試合数はカウント
+  noResult?: boolean;
+  periodFormat?: PeriodFormat; // 未設定＝halves（前後半）で互換
   notes?: string;
   youtubeUrl?: string;
   status: MatchStatus;
-  halfMinutes?: number;  // 1ハーフの長さ（分）。出場時間の「最後まで」計算に使用。未設定時は既定値
+  halfMinutes?: number;  // 1ハーフ/1本の長さ（分）。出場時間の「最後まで」計算に使用。未設定時は既定値
   playerIds?: string[];  // 出場予定・出場した選手
   playerStats?: { [playerId: string]: PlayerMatchStat }; // ファミリー：選手ごとの得点・アシスト
   photos?: string[];     // 試合の写真（Storage URL配列）
@@ -70,10 +82,16 @@ export interface MatchFormData {
   competitionName?: string;
   scoreHome: number | null;
   scoreAway: number | null;
+  etHome?: number | null;
+  etAway?: number | null;
+  pkHome?: number | null;
+  pkAway?: number | null;
+  noResult?: boolean;
+  periodFormat?: PeriodFormat;
   notes?: string;
   youtubeUrl?: string;
   status: MatchStatus;
-  halfMinutes?: number;  // 1ハーフの長さ（分）
+  halfMinutes?: number;  // 1ハーフ/1本の長さ（分）
   playerIds?: string[];  // 出場予定・出場した選手
 }
 

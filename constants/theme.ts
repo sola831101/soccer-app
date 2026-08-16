@@ -9,6 +9,7 @@ export const theme = {
   border: '#E8F5E9',
   borderLight: '#F0F0F0',
   officialBadge: '#1976D2',
+  subOfficialBadge: '#00838F',
   practiceBadge: '#FF9800',
   win: '#2E7D32',
   draw: '#757575',

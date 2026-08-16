@@ -138,7 +138,13 @@ function buildMatchData(data: MatchFormData) {
     competitionName: data.competitionName || null,
     scoreHome: data.scoreHome,
     scoreAway: data.scoreAway,
-    result: computeResult(data.scoreHome, data.scoreAway),
+    etHome: data.etHome ?? null,
+    etAway: data.etAway ?? null,
+    pkHome: data.pkHome ?? null,
+    pkAway: data.pkAway ?? null,
+    noResult: data.noResult ?? false,
+    periodFormat: data.periodFormat ?? 'halves',
+    result: computeResult(data),
     notes: data.notes || null,
     youtubeUrl: data.youtubeUrl || null,
     status: data.status,
@@ -227,13 +233,18 @@ export function subscribeToMatches(
   });
 }
 
-function computeResult(
-  scoreHome: number | null | undefined,
-  scoreAway: number | null | undefined
-): 'win' | 'loss' | 'draw' | null {
-  if (scoreHome == null || scoreAway == null) return null;
-  if (scoreHome > scoreAway) return 'win';
-  if (scoreHome < scoreAway) return 'loss';
+// 勝敗判定：noResult→null、通常＋延長で判定、同点はPK勝者で決定（PKなし同点→draw）
+function computeResult(data: MatchFormData): 'win' | 'loss' | 'draw' | null {
+  if (data.noResult) return null;
+  if (data.scoreHome == null || data.scoreAway == null) return null;
+  const fh = data.scoreHome + (data.etHome ?? 0); // 通常＋延長
+  const fa = data.scoreAway + (data.etAway ?? 0);
+  if (fh > fa) return 'win';
+  if (fh < fa) return 'loss';
+  // 同点 → PKで決着
+  if (data.pkHome != null && data.pkAway != null && data.pkHome !== data.pkAway) {
+    return data.pkHome > data.pkAway ? 'win' : 'loss';
+  }
   return 'draw';
 }
 

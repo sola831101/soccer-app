@@ -1,4 +1,12 @@
-import { Match, PlayInterval } from './types';
+import { Match, MatchType, PlayInterval } from './types';
+
+// 得失点集計用の実効ゴール（通常＋延長。PKは含めない）。noResult試合は呼び出し側で除外する
+export function effectiveGoals(m: Match): { scored: number; conceded: number } {
+  return {
+    scored: (m.scoreHome ?? 0) + (m.etHome ?? 0),
+    conceded: (m.scoreAway ?? 0) + (m.etAway ?? 0),
+  };
+}
 
 // 1ハーフの既定の長さ（分）。試合にhalfMinutesが未設定の場合のフォールバック
 export const DEFAULT_HALF_MINUTES = 15;
@@ -18,6 +26,7 @@ export function intervalMinutes(iv: PlayInterval, halfMinutes: number): number {
 export interface SeasonStats {
   totalMatches: number;
   officialMatches: number;
+  subOfficialMatches: number;
   practiceMatches: number;
   wins: number;
   losses: number;
@@ -31,6 +40,11 @@ export interface SeasonStats {
   officialDraws: number;
   officialGoalsScored: number;
   officialGoalsConceded: number;
+  subOfficialWins: number;
+  subOfficialLosses: number;
+  subOfficialDraws: number;
+  subOfficialGoalsScored: number;
+  subOfficialGoalsConceded: number;
   practiceWins: number;
   practiceLosses: number;
   practiceDraws: number;
@@ -85,68 +99,58 @@ export function computeStats(matches: Match[], fiscalYear?: number): SeasonStats
     });
   }
 
-  const stats: SeasonStats = {
-    totalMatches: filtered.length,
-    officialMatches: 0,
-    practiceMatches: 0,
-    wins: 0,
-    losses: 0,
-    draws: 0,
-    goalsScored: 0,
-    goalsConceded: 0,
-    goalDifference: 0,
-    winRate: 0,
-    officialWins: 0,
-    officialLosses: 0,
-    officialDraws: 0,
-    officialGoalsScored: 0,
-    officialGoalsConceded: 0,
-    practiceWins: 0,
-    practiceLosses: 0,
-    practiceDraws: 0,
-    practiceGoalsScored: 0,
-    practiceGoalsConceded: 0,
+  type Tally = { matches: number; wins: number; losses: number; draws: number; gs: number; gc: number };
+  const mk = (): Tally => ({ matches: 0, wins: 0, losses: 0, draws: 0, gs: 0, gc: 0 });
+  const byType: Record<MatchType, Tally> = {
+    official: mk(),
+    sub_official: mk(),
+    practice: mk(),
   };
+  let wins = 0, losses = 0, draws = 0, goalsScored = 0, goalsConceded = 0;
 
   for (const match of filtered) {
-    const isOfficial = match.matchType === 'official';
-    if (isOfficial) stats.officialMatches++;
-    else stats.practiceMatches++;
-
-    if (match.result === 'win') {
-      stats.wins++;
-      if (isOfficial) stats.officialWins++;
-      else stats.practiceWins++;
-    } else if (match.result === 'loss') {
-      stats.losses++;
-      if (isOfficial) stats.officialLosses++;
-      else stats.practiceLosses++;
-    } else if (match.result === 'draw') {
-      stats.draws++;
-      if (isOfficial) stats.officialDraws++;
-      else stats.practiceDraws++;
-    }
-
-    const scored = match.scoreHome ?? 0;
-    const conceded = match.scoreAway ?? 0;
-    stats.goalsScored += scored;
-    stats.goalsConceded += conceded;
-    if (isOfficial) {
-      stats.officialGoalsScored += scored;
-      stats.officialGoalsConceded += conceded;
-    } else {
-      stats.practiceGoalsScored += scored;
-      stats.practiceGoalsConceded += conceded;
-    }
+    const type: MatchType = byType[match.matchType] ? match.matchType : 'practice';
+    const t = byType[type];
+    t.matches++; // 試合数は勝敗なしも含めてカウント
+    if (match.noResult) continue; // 勝敗なしは勝率・得失点から除外
+    if (match.result === 'win') { wins++; t.wins++; }
+    else if (match.result === 'loss') { losses++; t.losses++; }
+    else if (match.result === 'draw') { draws++; t.draws++; }
+    const { scored, conceded } = effectiveGoals(match); // 通常＋延長（PK除外）
+    goalsScored += scored; goalsConceded += conceded;
+    t.gs += scored; t.gc += conceded;
   }
 
-  stats.goalDifference = stats.goalsScored - stats.goalsConceded;
-  stats.winRate =
-    stats.totalMatches > 0
-      ? Math.round((stats.wins / stats.totalMatches) * 100)
-      : 0;
+  const decided = wins + losses + draws; // 勝敗が付いた試合数（勝率の母数）
 
-  return stats;
+  return {
+    totalMatches: filtered.length,
+    officialMatches: byType.official.matches,
+    subOfficialMatches: byType.sub_official.matches,
+    practiceMatches: byType.practice.matches,
+    wins,
+    losses,
+    draws,
+    goalsScored,
+    goalsConceded,
+    goalDifference: goalsScored - goalsConceded,
+    winRate: decided > 0 ? Math.round((wins / decided) * 100) : 0,
+    officialWins: byType.official.wins,
+    officialLosses: byType.official.losses,
+    officialDraws: byType.official.draws,
+    officialGoalsScored: byType.official.gs,
+    officialGoalsConceded: byType.official.gc,
+    subOfficialWins: byType.sub_official.wins,
+    subOfficialLosses: byType.sub_official.losses,
+    subOfficialDraws: byType.sub_official.draws,
+    subOfficialGoalsScored: byType.sub_official.gs,
+    subOfficialGoalsConceded: byType.sub_official.gc,
+    practiceWins: byType.practice.wins,
+    practiceLosses: byType.practice.losses,
+    practiceDraws: byType.practice.draws,
+    practiceGoalsScored: byType.practice.gs,
+    practiceGoalsConceded: byType.practice.gc,
+  };
 }
 
 export interface OpponentRecord {
@@ -186,12 +190,14 @@ export function computeOpponentStats(matches: Match[], fiscalYear?: number): Opp
     }
 
     record.matches++;
+    if (match.noResult) continue; // 勝敗なしは成績・得失点から除外（試合数のみ加算）
     if (match.result === 'win') record.wins++;
     else if (match.result === 'loss') record.losses++;
     else if (match.result === 'draw') record.draws++;
 
-    record.goalsScored += match.scoreHome ?? 0;
-    record.goalsConceded += match.scoreAway ?? 0;
+    const { scored, conceded } = effectiveGoals(match);
+    record.goalsScored += scored;
+    record.goalsConceded += conceded;
   }
 
   return Array.from(map.values()).sort((a, b) => b.matches - a.matches);
