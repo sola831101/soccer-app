@@ -16,7 +16,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { theme, fontSize, spacing, borderRadius } from '../constants/theme';
-import { MatchFormData, MatchType, MatchStatus, Venue, PlayerMatchStat, PlayInterval } from '../lib/types';
+import { MatchFormData, MatchType, MatchStatus, PeriodFormat, Venue, PlayerMatchStat, PlayInterval } from '../lib/types';
 import { useTeam } from '../lib/context/TeamContext';
 import { createVenue } from '../lib/firestore';
 
@@ -115,6 +115,14 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
   const [youtubeUrl, setYoutubeUrl] = useState(initialData?.youtubeUrl || '');
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>(initialData?.playerIds ?? []);
   const [halfMinutes, setHalfMinutes] = useState<number>(initialData?.halfMinutes ?? HALF_DEFAULT);
+  const [periodFormat, setPeriodFormat] = useState<PeriodFormat>(initialData?.periodFormat ?? 'halves');
+  const [noResult, setNoResult] = useState<boolean>(initialData?.noResult ?? false);
+  const [hasExtraTime, setHasExtraTime] = useState<boolean>(initialData?.etHome != null || initialData?.etAway != null);
+  const [etHome, setEtHome] = useState(initialData?.etHome != null ? String(initialData.etHome) : '');
+  const [etAway, setEtAway] = useState(initialData?.etAway != null ? String(initialData.etAway) : '');
+  const [hasPk, setHasPk] = useState<boolean>(initialData?.pkHome != null || initialData?.pkAway != null);
+  const [pkHome, setPkHome] = useState(initialData?.pkHome != null ? String(initialData.pkHome) : '');
+  const [pkAway, setPkAway] = useState(initialData?.pkAway != null ? String(initialData.pkAway) : '');
   const [statsDraft, setStatsDraft] = useState<Record<string, StatDraft>>(() => {
     const d: Record<string, StatDraft> = {};
     for (const pid of initialData?.playerIds ?? []) {
@@ -148,8 +156,9 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
   };
   const addInterval = (pid: string) => {
     const cur = getDraft(pid);
-    const hasFirst = cur.intervals.some((iv) => iv.half === 1);
-    updateStatDraft(pid, { intervals: [...cur.intervals, makeHalf(hasFirst ? 2 : 1)] });
+    // 1本形式は常に前半(=1)扱い。前後半は前半→後半の順で足す
+    const half: 1 | 2 = periodFormat === 'single' ? 1 : cur.intervals.some((iv) => iv.half === 1) ? 2 : 1;
+    updateStatDraft(pid, { intervals: [...cur.intervals, makeHalf(half)] });
   };
   const removeInterval = (pid: string, idx: number) => {
     const cur = getDraft(pid);
@@ -169,10 +178,13 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
       if (!v) continue;
       let intervals: PlayInterval[] = [];
       if (v.fullTime) {
-        intervals = [
-          { half: 1, start: 'start', end: 'end' },
-          { half: 2, start: 'start', end: 'end' },
-        ];
+        // フル出場：前後半なら前半+後半、1本なら1区間
+        intervals = periodFormat === 'single'
+          ? [{ half: 1, start: 'start', end: 'end' }]
+          : [
+              { half: 1, start: 'start', end: 'end' },
+              { half: 2, start: 'start', end: 'end' },
+            ];
       } else {
         for (const d of v.intervals) {
           const startN = d.startKind === 'start' ? 0 : parseInt(d.startMin, 10);
@@ -230,9 +242,17 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
       }
     }
 
-    // スコアをパースし、NaN対策
-    const parsedHome = scoreHome !== '' ? parseInt(scoreHome, 10) : null;
-    const parsedAway = scoreAway !== '' ? parseInt(scoreAway, 10) : null;
+    // スコアをパース（空/NaN は null）
+    const num = (s: string): number | null => {
+      if (s === '') return null;
+      const n = parseInt(s, 10);
+      return isNaN(n) ? null : n;
+    };
+    // 勝敗を記録しない試合はスコア/延長/PKを持たせない
+    const parsedHome = noResult ? null : num(scoreHome);
+    const parsedAway = noResult ? null : num(scoreAway);
+    const useEt = !noResult && hasExtraTime;
+    const usePk = !noResult && hasPk;
 
     const formData: MatchFormData = {
       date,
@@ -240,9 +260,15 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
       venue: venue.trim(),
       venueId: savedVenueId,
       matchType,
-      competitionName: matchType === 'official' ? competitionName.trim() : undefined,
-      scoreHome: parsedHome !== null && !isNaN(parsedHome) ? parsedHome : null,
-      scoreAway: parsedAway !== null && !isNaN(parsedAway) ? parsedAway : null,
+      competitionName: matchType !== 'practice' ? competitionName.trim() || undefined : undefined,
+      scoreHome: parsedHome,
+      scoreAway: parsedAway,
+      etHome: useEt ? num(etHome) : null,
+      etAway: useEt ? num(etAway) : null,
+      pkHome: usePk ? num(pkHome) : null,
+      pkAway: usePk ? num(pkAway) : null,
+      noResult,
+      periodFormat,
       notes: notes.trim() || undefined,
       youtubeUrl: youtubeUrl.trim() || undefined,
       status,
@@ -414,33 +440,33 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
         {/* 試合種別 */}
         <Text style={styles.label}>試合種別</Text>
         <View style={styles.segmentRow}>
-          <TouchableOpacity
-            style={[styles.segment, matchType === 'practice' && styles.segmentActiveOrange]}
-            onPress={() => setMatchType('practice')}
-          >
-            <Text style={[styles.segmentText, matchType === 'practice' && styles.segmentTextActive]}>
-              練習試合
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.segment, matchType === 'official' && styles.segmentActiveBlue]}
-            onPress={() => setMatchType('official')}
-          >
-            <Text style={[styles.segmentText, matchType === 'official' && styles.segmentTextActive]}>
-              公式戦
-            </Text>
-          </TouchableOpacity>
+          {([
+            { key: 'official', label: '公式戦', active: styles.segmentActiveBlue },
+            { key: 'sub_official', label: 'サブ公式戦', active: styles.segmentActiveTeal },
+            { key: 'practice', label: '練習試合', active: styles.segmentActiveOrange },
+          ] as const).map((seg) => {
+            const on = matchType === seg.key;
+            return (
+              <TouchableOpacity
+                key={seg.key}
+                style={[styles.segment, on && seg.active]}
+                onPress={() => setMatchType(seg.key)}
+              >
+                <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{seg.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* 大会名 */}
-        {matchType === 'official' && (
+        {/* 大会名（公式戦・サブ公式戦） */}
+        {matchType !== 'practice' && (
           <>
             <Text style={styles.label}>大会名</Text>
             <TextInput
               style={styles.input}
               value={competitionName}
               onChangeText={setCompetitionName}
-              placeholder="例: ○○リーグ 2026"
+              placeholder="例: ○○リーグ 2026 / △△カップ"
               placeholderTextColor={theme.textSecondary}
             />
           </>
@@ -458,42 +484,143 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
           </Text>
         </View>
 
-        {/* スコア */}
+        {/* スコア・結果 */}
         {status === 'completed' && (
           <>
-            <Text style={styles.label}>スコア</Text>
-            <View style={styles.scoreRow}>
-              <View style={styles.scoreInput}>
-                <Text style={styles.scoreLabel}>自チーム</Text>
-                <TextInput
-                  style={styles.scoreField}
-                  value={scoreHome}
-                  onChangeText={setScoreHome}
-                  keyboardType="number-pad"
-                  placeholder="0"
-                  placeholderTextColor="#CCCCCC"
-                  textAlign="center"
-                />
-              </View>
-              <Text style={styles.scoreSeparator}>-</Text>
-              <View style={styles.scoreInput}>
-                <Text style={styles.scoreLabel}>相手</Text>
-                <TextInput
-                  style={styles.scoreField}
-                  value={scoreAway}
-                  onChangeText={setScoreAway}
-                  keyboardType="number-pad"
-                  placeholder="0"
-                  placeholderTextColor="#CCCCCC"
-                  textAlign="center"
-                />
-              </View>
-            </View>
+            <Text style={styles.label}>スコア・結果</Text>
+            <TouchableOpacity style={styles.checkboxRow} onPress={() => setNoResult((v) => !v)}>
+              <Ionicons
+                name={noResult ? 'checkbox' : 'square-outline'}
+                size={22}
+                color={noResult ? theme.primary : theme.textSecondary}
+              />
+              <Text style={styles.checkboxLabel}>勝敗を記録しない（スコアなしで登録）</Text>
+            </TouchableOpacity>
+
+            {!noResult && (
+              <>
+                <View style={styles.scoreRow}>
+                  <View style={styles.scoreInput}>
+                    <Text style={styles.scoreLabel}>自チーム</Text>
+                    <TextInput
+                      style={styles.scoreField}
+                      value={scoreHome}
+                      onChangeText={setScoreHome}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor="#CCCCCC"
+                      textAlign="center"
+                    />
+                  </View>
+                  <Text style={styles.scoreSeparator}>-</Text>
+                  <View style={styles.scoreInput}>
+                    <Text style={styles.scoreLabel}>相手</Text>
+                    <TextInput
+                      style={styles.scoreField}
+                      value={scoreAway}
+                      onChangeText={setScoreAway}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor="#CCCCCC"
+                      textAlign="center"
+                    />
+                  </View>
+                </View>
+
+                {/* 延長戦 */}
+                <TouchableOpacity style={styles.checkboxRow} onPress={() => setHasExtraTime((v) => !v)}>
+                  <Ionicons
+                    name={hasExtraTime ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={hasExtraTime ? theme.primary : theme.textSecondary}
+                  />
+                  <Text style={styles.checkboxLabel}>延長戦あり</Text>
+                </TouchableOpacity>
+                {hasExtraTime && (
+                  <View style={styles.subScoreRow}>
+                    <Text style={styles.subScoreLabel}>延長</Text>
+                    <TextInput
+                      style={styles.subScoreField}
+                      value={etHome}
+                      onChangeText={setEtHome}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor="#CCCCCC"
+                      textAlign="center"
+                    />
+                    <Text style={styles.subScoreSep}>-</Text>
+                    <TextInput
+                      style={styles.subScoreField}
+                      value={etAway}
+                      onChangeText={setEtAway}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor="#CCCCCC"
+                      textAlign="center"
+                    />
+                  </View>
+                )}
+
+                {/* PK戦 */}
+                <TouchableOpacity style={styles.checkboxRow} onPress={() => setHasPk((v) => !v)}>
+                  <Ionicons
+                    name={hasPk ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={hasPk ? theme.primary : theme.textSecondary}
+                  />
+                  <Text style={styles.checkboxLabel}>PK戦あり</Text>
+                </TouchableOpacity>
+                {hasPk && (
+                  <View style={styles.subScoreRow}>
+                    <Text style={styles.subScoreLabel}>PK</Text>
+                    <TextInput
+                      style={styles.subScoreField}
+                      value={pkHome}
+                      onChangeText={setPkHome}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor="#CCCCCC"
+                      textAlign="center"
+                    />
+                    <Text style={styles.subScoreSep}>-</Text>
+                    <TextInput
+                      style={styles.subScoreField}
+                      value={pkAway}
+                      onChangeText={setPkAway}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor="#CCCCCC"
+                      textAlign="center"
+                    />
+                  </View>
+                )}
+              </>
+            )}
           </>
         )}
 
-        {/* 1ハーフの長さ */}
-        <Text style={styles.label}>1ハーフの長さ</Text>
+        {/* 試合形式 */}
+        <Text style={styles.label}>試合形式</Text>
+        <View style={styles.segmentRow}>
+          {([
+            { key: 'halves', label: '前後半' },
+            { key: 'single', label: '1本（単一ピリオド）' },
+          ] as const).map((f) => {
+            const on = periodFormat === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.segment, on && styles.segmentActiveGreen]}
+                onPress={() => setPeriodFormat(f.key)}
+              >
+                <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{f.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* 1ハーフ/1本の長さ */}
+        <Text style={styles.label}>{periodFormat === 'single' ? '試合時間' : '1ハーフの長さ'}</Text>
         <View style={styles.halfStepRow}>
           <TouchableOpacity
             style={styles.halfStepBtn}
@@ -508,7 +635,7 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
           >
             <Ionicons name="add" size={20} color={theme.primary} />
           </TouchableOpacity>
-          <Text style={styles.halfStepHint}>ハーフ</Text>
+          {periodFormat !== 'single' && <Text style={styles.halfStepHint}>ハーフ</Text>}
         </View>
 
         {/* 出場選手 */}
@@ -581,7 +708,9 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
                           size={22}
                           color={d.fullTime ? theme.primary : theme.textSecondary}
                         />
-                        <Text style={styles.fullTimeLabel}>フル出場（前後半とも最後まで）</Text>
+                        <Text style={styles.fullTimeLabel}>
+                          {periodFormat === 'single' ? 'フル出場（最後まで）' : 'フル出場（前後半とも最後まで）'}
+                        </Text>
                       </TouchableOpacity>
 
                       {!d.fullTime && (
@@ -589,22 +718,26 @@ export function MatchForm({ initialData, initialPlayerStats, onSubmit, onDelete,
                           {d.intervals.map((iv, i) => (
                             <View key={i} style={styles.ivCard}>
                               <View style={styles.ivCardHead}>
-                                <View style={styles.segRow}>
-                                  {([1, 2] as const).map((h) => {
-                                    const on = iv.half === h;
-                                    return (
-                                      <TouchableOpacity
-                                        key={h}
-                                        style={[styles.segBtn, on && styles.segBtnOn]}
-                                        onPress={() => setIntervalField(pid, i, { half: h })}
-                                      >
-                                        <Text style={[styles.segBtnText, on && styles.segBtnTextOn]}>
-                                          {h === 1 ? '前半' : '後半'}
-                                        </Text>
-                                      </TouchableOpacity>
-                                    );
-                                  })}
-                                </View>
+                                {periodFormat === 'single' ? (
+                                  <Text style={styles.ivSingleLabel}>出場区間</Text>
+                                ) : (
+                                  <View style={styles.segRow}>
+                                    {([1, 2] as const).map((h) => {
+                                      const on = iv.half === h;
+                                      return (
+                                        <TouchableOpacity
+                                          key={h}
+                                          style={[styles.segBtn, on && styles.segBtnOn]}
+                                          onPress={() => setIntervalField(pid, i, { half: h })}
+                                        >
+                                          <Text style={[styles.segBtnText, on && styles.segBtnTextOn]}>
+                                            {h === 1 ? '前半' : '後半'}
+                                          </Text>
+                                        </TouchableOpacity>
+                                      );
+                                    })}
+                                  </View>
+                                )}
                                 <TouchableOpacity onPress={() => removeInterval(pid, i)} style={styles.ivRemove}>
                                   <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
                                 </TouchableOpacity>
@@ -887,6 +1020,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primary,
     borderColor: theme.primary,
   },
+  segmentActiveTeal: {
+    backgroundColor: theme.subOfficialBadge,
+    borderColor: theme.subOfficialBadge,
+  },
   segmentText: {
     fontSize: fontSize.sm,
     fontWeight: '600',
@@ -953,6 +1090,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.textSecondary,
     marginTop: 20,
+  },
+  subScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  subScoreLabel: {
+    fontSize: fontSize.sm,
+    color: theme.textSecondary,
+    fontWeight: '600',
+    width: 40,
+    textAlign: 'right',
+  },
+  subScoreField: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: borderRadius.sm,
+    width: 56,
+    height: 40,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: theme.text,
+    backgroundColor: theme.white,
+  },
+  subScoreSep: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: theme.textSecondary,
+  },
+  ivSingleLabel: {
+    fontSize: fontSize.sm,
+    color: theme.textSecondary,
+    fontWeight: '600',
   },
   submitButton: {
     backgroundColor: theme.primary,
