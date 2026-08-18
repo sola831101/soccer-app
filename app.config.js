@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.soccerapp.manager',
-      buildNumber: '35',
+      buildNumber: '36',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSUserTrackingUsageDescription:
@@ -30,7 +30,7 @@ module.exports = {
         monochromeImage: './assets/android-icon-monochrome.png',
       },
       package: 'com.soccerapp.manager',
-      versionCode: 11,
+      versionCode: 12,
     },
     web: {
       favicon: './assets/favicon.png',
@@ -39,6 +39,15 @@ module.exports = {
       'expo-router',
       '@sentry/react-native/expo',
       '@react-native-community/datetimepicker',
+      [
+        // 写真ライブラリのみ使用（カメラ・マイクは未使用なので付与しない）
+        'expo-image-picker',
+        {
+          photosPermission: '試合の記録に追加する写真を選ぶため、写真ライブラリへのアクセスを使用します。',
+          cameraPermission: false,
+          microphonePermission: false,
+        },
+      ],
       [
         'react-native-google-mobile-ads',
         {
