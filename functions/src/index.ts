@@ -19,6 +19,11 @@ const OTP_RESEND_INTERVAL_MS = 60 * 1000; // 再送インターバル: 60秒
 const IP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // IPレート制限ウィンドウ: 1分
 const IP_RATE_LIMIT_MAX = 10; // 1分間に同一IPから最大10リクエスト
 
+// App Store審査用デモアカウント：メール受信なしで固定コードでログインできるようにする。
+// 審査担当は受信箱にアクセスできないため。承認後に無効化してよい。
+const REVIEW_EMAIL = 'appreview@sakalog.app';
+const REVIEW_CODE = '730294';
+
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -42,6 +47,12 @@ export const sendOTP = functions.https.onRequest(async (req, res) => {
   const email = normalizeEmail(req.body.email ?? '');
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     res.status(400).json({ error: 'メールアドレスが無効です' });
+    return;
+  }
+
+  // 審査用アカウントはメール送信をスキップ（受信箱不要でコード入力画面へ進める）
+  if (email === REVIEW_EMAIL) {
+    res.status(200).json({ success: true });
     return;
   }
 
@@ -116,32 +127,37 @@ export const verifyOTP = functions.https.onRequest(async (req, res) => {
     return;
   }
 
-  const otpDoc = await db.collection('otps').doc(email).get();
-  if (!otpDoc.exists) {
-    res.status(404).json({ error: 'コードが見つかりません。再送してください' });
-    return;
-  }
+  // App Store審査用：審査メール＋固定コードならOTP検証をスキップ（受信箱不要でログイン）
+  const isReviewLogin = email === REVIEW_EMAIL && code === REVIEW_CODE;
 
-  const otp = otpDoc.data()!;
+  if (!isReviewLogin) {
+    const otpDoc = await db.collection('otps').doc(email).get();
+    if (!otpDoc.exists) {
+      res.status(404).json({ error: 'コードが見つかりません。再送してください' });
+      return;
+    }
 
-  if (otp.attempts >= MAX_ATTEMPTS) {
-    res.status(429).json({ error: '試行回数が上限に達しました。再送してください' });
-    return;
-  }
+    const otp = otpDoc.data()!;
 
-  if (Date.now() > otp.expiresAt) {
+    if (otp.attempts >= MAX_ATTEMPTS) {
+      res.status(429).json({ error: '試行回数が上限に達しました。再送してください' });
+      return;
+    }
+
+    if (Date.now() > otp.expiresAt) {
+      await db.collection('otps').doc(email).delete();
+      res.status(410).json({ error: 'コードの有効期限が切れました。再送してください' });
+      return;
+    }
+
+    if (otp.code !== code) {
+      await db.collection('otps').doc(email).update({ attempts: otp.attempts + 1 });
+      res.status(401).json({ error: 'コードが正しくありません' });
+      return;
+    }
+
     await db.collection('otps').doc(email).delete();
-    res.status(410).json({ error: 'コードの有効期限が切れました。再送してください' });
-    return;
   }
-
-  if (otp.code !== code) {
-    await db.collection('otps').doc(email).update({ attempts: otp.attempts + 1 });
-    res.status(401).json({ error: 'コードが正しくありません' });
-    return;
-  }
-
-  await db.collection('otps').doc(email).delete();
 
   const emailUserRef = db.collection('emailUsers').doc(email);
   const emailUserDoc = await emailUserRef.get();
